@@ -95,7 +95,7 @@ pnpm lint
 
 ## Contributing
 
-We welcome contributions! Please see our [Contributing Guide](./docs/CONTRIBUTING.md) and [Code of Conduct](./docs/CODE_OF_CONDUCT.md).
+We welcome contributions. Please see our [Contributing Guide](./docs/CONTRIBUTING.md) and [Code of Conduct](./docs/CODE_OF_CONDUCT.md).
 
 ## Security
 
