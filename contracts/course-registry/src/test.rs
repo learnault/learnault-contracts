@@ -114,6 +114,6 @@ fn test_course_created_event_emitted() {
 #[test]
 #[should_panic(expected = "course not found")]
 fn test_get_nonexistent_course_panics() {
-    let (env, client) = setup();
+    let (_env, client) = setup();
     client.get_course(&999);
 }
