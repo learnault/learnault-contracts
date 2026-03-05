@@ -18,7 +18,7 @@ fn test_create_course() {
     let (id, title, active) = client.get_course(&1u32);
     assert_eq!(id, 1u32);
     assert_eq!(title, symbol_short!("Rust101"));
-    assert_eq!(active, true);
+    assert!(active);
 }
 
 #[test]
@@ -37,7 +37,7 @@ fn test_deactivate_course() {
 
     // Verify course is active
     let (_, _, active) = client.get_course(&1u32);
-    assert_eq!(active, true);
+    assert!(active);
 
     // Deactivate the course
     let result = client.set_course_status(&admin, &1u32, &false);
@@ -45,7 +45,7 @@ fn test_deactivate_course() {
 
     // Verify course is now deactivated
     let (_, _, active) = client.get_course(&1u32);
-    assert_eq!(active, false);
+    assert!(!active);
 }
 
 #[test]
@@ -65,7 +65,7 @@ fn test_reactivate_course() {
 
     // Verify course is deactivated
     let (_, _, active) = client.get_course(&1u32);
-    assert_eq!(active, false);
+    assert!(!active);
 
     // Reactivate the course
     let result = client.set_course_status(&admin, &1u32, &true);
@@ -73,7 +73,7 @@ fn test_reactivate_course() {
 
     // Verify course is now active
     let (_, _, active) = client.get_course(&1u32);
-    assert_eq!(active, true);
+    assert!(active);
 }
 
 #[test]
