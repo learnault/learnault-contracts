@@ -6,7 +6,10 @@ fn test_create_course() {
     let contract_id = env.register(crate::CourseRegistry, ());
     let client = crate::CourseRegistryClient::new(&env, &contract_id);
 
-    let admin = Address::from_str(&env, "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM");
+    let admin = Address::from_str(
+        &env,
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+    );
 
     let result = client.create_course(&admin, &1u32, &symbol_short!("Rust101"));
     assert_eq!(result, symbol_short!("success"));
@@ -24,7 +27,10 @@ fn test_deactivate_course() {
     let contract_id = env.register(crate::CourseRegistry, ());
     let client = crate::CourseRegistryClient::new(&env, &contract_id);
 
-    let admin = Address::from_str(&env, "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM");
+    let admin = Address::from_str(
+        &env,
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+    );
 
     // Create a course
     client.create_course(&admin, &1u32, &symbol_short!("Rust101"));
@@ -48,7 +54,10 @@ fn test_reactivate_course() {
     let contract_id = env.register(crate::CourseRegistry, ());
     let client = crate::CourseRegistryClient::new(&env, &contract_id);
 
-    let admin = Address::from_str(&env, "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM");
+    let admin = Address::from_str(
+        &env,
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+    );
 
     // Create and deactivate a course
     client.create_course(&admin, &1u32, &symbol_short!("Rust101"));
@@ -74,7 +83,10 @@ fn test_set_status_nonexistent_course() {
     let contract_id = env.register(crate::CourseRegistry, ());
     let client = crate::CourseRegistryClient::new(&env, &contract_id);
 
-    let admin = Address::from_str(&env, "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM");
+    let admin = Address::from_str(
+        &env,
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+    );
 
     // Try to deactivate a course that doesn't exist
     client.set_course_status(&admin, &999u32, &false);

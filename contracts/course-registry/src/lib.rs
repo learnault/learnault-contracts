@@ -51,10 +51,8 @@ impl CourseRegistry {
             symbol_short!("inactive")
         };
 
-        env.events().publish(
-            (symbol_short!("status"), id),
-            (admin, status_str),
-        );
+        env.events()
+            .publish((symbol_short!("status"), id), (admin, status_str));
 
         symbol_short!("success")
     }
