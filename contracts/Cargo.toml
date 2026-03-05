@@ -1,5 +1,5 @@
 [workspace]
-members = ["hello-learnault"]
+members = ["hello-learnault", "course-registry"]
 resolver = "2"
 
 [workspace.dependencies]
