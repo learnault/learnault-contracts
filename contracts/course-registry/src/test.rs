@@ -5,7 +5,7 @@ use soroban_sdk::{
     Address, BytesN, Env,
 };
 
-use crate::{CourseRegistry, CourseRegistryClient};
+use crate::{CourseRegistry, CourseRegistryClient, DataKey};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -145,4 +145,93 @@ fn test_update_metadata_multiple_times() {
     client.create_course(&admin, &instructor, &3, &hash);
     client.update_metadata(&1, &hash_v2);
     client.update_metadata(&1, &hash_v3);
+}
+
+// ── is_course_finished tests ──────────────────────────────────────────────────
+
+#[test]
+fn test_is_course_finished_unenrolled_returns_false() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+
+    // Learner has no progress entry at all — should return false
+    assert!(!client.is_course_finished(&learner, &1));
+}
+
+#[test]
+fn test_is_course_finished_partial_progress_returns_false() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.create_course(&admin, &instructor, &5, &dummy_hash(&env));
+
+    // Manually write partial progress into storage
+    env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .set(&DataKey::Progress(learner.clone(), 1), &3u32);
+    });
+
+    assert!(!client.is_course_finished(&learner, &1));
+}
+
+#[test]
+fn test_is_course_finished_exact_progress_returns_true() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.create_course(&admin, &instructor, &4, &dummy_hash(&env));
+
+    // Progress exactly equals total_modules
+    env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .set(&DataKey::Progress(learner.clone(), 1), &4u32);
+    });
+
+    assert!(client.is_course_finished(&learner, &1));
+}
+
+#[test]
+fn test_is_course_finished_excess_progress_returns_true() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+
+    // Progress exceeds total_modules (defensive edge case)
+    env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .set(&DataKey::Progress(learner.clone(), 1), &99u32);
+    });
+
+    assert!(client.is_course_finished(&learner, &1));
+}
+
+#[test]
+#[should_panic(expected = "Course not found")]
+fn test_is_course_finished_invalid_course_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+
+    // Course ID 99 was never created
+    client.is_course_finished(&learner, &99);
 }
