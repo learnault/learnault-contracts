@@ -8,6 +8,15 @@ use types::{Course, DataKey};
 pub struct CourseRegistry;
 
 #[contractevent]
+pub struct MetadataUpdated {
+    #[topic]
+    pub id: u32,
+    #[topic]
+    pub instructor: Address,
+    pub new_hash: BytesN<32>,
+}
+
+#[contractevent]
 pub struct CourseCreated {
     #[topic]
     pub id: u32,
@@ -80,6 +89,31 @@ impl CourseRegistry {
         .publish(&env);
 
         new_id
+    }
+
+    /// Updates the IPFS metadata hash for a course. Only callable by the course instructor.
+    pub fn update_metadata(env: Env, id: u32, new_hash: BytesN<32>) {
+        let mut course: Course = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Course(id))
+            .expect("Course not found");
+
+        course.instructor.require_auth();
+
+        let instructor = course.instructor.clone();
+        course.metadata_hash = new_hash.clone();
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Course(id), &course);
+
+        MetadataUpdated {
+            id,
+            instructor,
+            new_hash,
+        }
+        .publish(&env);
     }
 
     /// Helper to check the current total number of courses.
