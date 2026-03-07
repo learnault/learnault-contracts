@@ -207,3 +207,60 @@ fn test_enroll_panics_when_learner_already_enrolled() {
     // The second attempt must panic, proving the first enrollment was saved
     client.enroll(&learner, &id);
 }
+
+#[test]
+fn test_create_and_get_course() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let hash = dummy_hash(&env);
+
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &instructor, &5, &hash);
+
+    // Test: Retrieve the course using get_course
+    let retrieved_course = client.get_course(&course_id);
+
+    // Assert: Verify all fields match
+    assert_eq!(retrieved_course.instructor, instructor);
+    assert_eq!(retrieved_course.total_modules, 5);
+    assert_eq!(retrieved_course.metadata_hash, hash);
+    assert!(retrieved_course.active);
+}
+
+#[test]
+#[should_panic(expected = "Course not found")]
+fn test_get_nonexistent_course() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+
+    client.initialize(&admin);
+
+    // Test: Try to retrieve a non-existent course
+    let _ = client.get_course(&999);
+}
+
+#[test]
+fn test_multiple_courses() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor1 = Address::generate(&env);
+    let instructor2 = Address::generate(&env);
+    let hash1 = dummy_hash(&env);
+    let hash2 = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.initialize(&admin);
+    let course_id1 = client.create_course(&admin, &instructor1, &10, &hash1);
+    let course_id2 = client.create_course(&admin, &instructor2, &7, &hash2);
+
+    // Test: Retrieve both courses
+    let retrieved_course1 = client.get_course(&course_id1);
+    let retrieved_course2 = client.get_course(&course_id2);
+
+    // Assert: Verify each course is retrieved correctly
+    assert_eq!(retrieved_course1.instructor, instructor1);
+    assert_eq!(retrieved_course1.total_modules, 10);
+    assert_eq!(retrieved_course2.instructor, instructor2);
+    assert_eq!(retrieved_course2.total_modules, 7);
+    assert_ne!(retrieved_course1.instructor, retrieved_course2.instructor);
+}

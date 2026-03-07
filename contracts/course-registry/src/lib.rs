@@ -138,6 +138,29 @@ impl CourseRegistry {
             .get(&DataKey::CourseCount)
             .unwrap_or(0)
     }
+
+    /// Returns the full details of a specific course.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban environment
+    /// * `id` - The course ID
+    ///
+    /// # Returns
+    /// The Course struct if found
+    ///
+    /// # Panics
+    /// Panics if the course ID is invalid (course doesn't exist in storage)
+    pub fn get_course(env: Env, id: u32) -> Course {
+        // 1. Construct DataKey::Course(id)
+        let key = DataKey::Course(id);
+
+        // 2. Fetch Course struct from Persistent storage
+        // 3. Assert course exists (panic if not found)
+        env.storage()
+            .persistent()
+            .get(&key)
+            .expect("Course not found")
+    }
 }
 
 mod test;
