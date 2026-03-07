@@ -1,6 +1,8 @@
 [workspace]
-members = ["hello-learnault", "course-registry", "reward-pool",]
 resolver = "2"
+members = [
+  "contracts/*",
+]
 
 [workspace.dependencies]
 soroban-sdk = "23"

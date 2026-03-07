@@ -1,72 +1,133 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, Address, Env};
+use soroban_sdk::{contract, contractevent, contractimpl, Address, BytesN, Env};
 
-#[contracttype]
-pub struct Course {
-    pub active: bool,
-    pub total_modules: u32,
-}
-
-#[contracttype]
-pub enum DataKey {
-    Course(u32),
-    Progress(Address, u32),
-}
+pub mod types;
+use types::{Course, DataKey};
 
 #[contract]
 pub struct CourseRegistry;
 
+#[contractevent]
+pub struct MetadataUpdated {
+    #[topic]
+    pub id: u32,
+    #[topic]
+    pub instructor: Address,
+    pub new_hash: BytesN<32>,
+}
+
+#[contractevent]
+pub struct CourseCreated {
+    #[topic]
+    pub id: u32,
+    #[topic]
+    pub instructor: Address,
+    pub total_modules: u32,
+}
+
 #[contractimpl]
 impl CourseRegistry {
-    /// Creates a new active course with the given id and total module count.
-    pub fn create_course(env: Env, id: u32, total_modules: u32) {
+    /// Sets the official Protocol Admin. Must be called once upon deployment.
+    pub fn initialize(env: Env, admin: Address) {
+        if env.storage().instance().has(&DataKey::Admin) {
+            panic!("Already initialized");
+        }
+        env.storage().instance().set(&DataKey::Admin, &admin);
+    }
+
+    /// Registers a new course on-chain.
+    pub fn create_course(
+        env: Env,
+        admin: Address,
+        instructor: Address,
+        total_modules: u32,
+        metadata_hash: BytesN<32>,
+    ) -> u32 {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        assert!(
+            admin == stored_admin,
+            "Unauthorized: Caller is not the protocol admin"
+        );
+
+        assert!(total_modules > 0, "total_modules must be greater than 0");
+
+        let current_count: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::CourseCount)
+            .unwrap_or(0);
+        let new_id = current_count + 1;
+        env.storage().instance().set(&DataKey::CourseCount, &new_id);
+
         let course = Course {
-            active: true,
+            instructor: instructor.clone(),
             total_modules,
+            metadata_hash,
+            active: true,
         };
         env.storage()
             .persistent()
-            .set(&DataKey::Course(id), &course);
+            .set(&DataKey::Course(new_id), &course);
+
+        CourseCreated {
+            id: new_id,
+            instructor,
+            total_modules,
+        }
+        .publish(&env);
+
+        new_id
     }
 
-    /// Sets the active status of an existing course.
-    pub fn set_active(env: Env, id: u32, active: bool) {
+    /// Updates the IPFS metadata hash for a course. Only callable by the course instructor.
+    pub fn update_metadata(env: Env, id: u32, new_hash: BytesN<32>) {
         let mut course: Course = env
             .storage()
             .persistent()
             .get(&DataKey::Course(id))
-            .unwrap();
-        course.active = active;
+            .expect("Course not found");
+
+        course.instructor.require_auth();
+
+        let instructor = course.instructor.clone();
+        course.metadata_hash = new_hash.clone();
+
         env.storage()
             .persistent()
             .set(&DataKey::Course(id), &course);
+
+        MetadataUpdated {
+            id,
+            instructor,
+            new_hash,
+        }
+        .publish(&env);
     }
 
     /// Enrolls a learner in an active course, initializing their progress to 0.
-    ///
-    /// Panics if the course does not exist, is not active, or the learner is
-    /// already enrolled.
     pub fn enroll(env: Env, learner: Address, id: u32) {
-        // 1. Authenticate the learner.
         learner.require_auth();
 
-        // 2. Retrieve the Course struct; panics if it does not exist.
         let course: Course = env
             .storage()
             .persistent()
             .get(&DataKey::Course(id))
-            .unwrap();
+            .expect("Course not found");
 
-        // 3. Assert the course is active.
-        assert!(course.active);
+        assert!(course.active, "Course is not active");
 
-        // 4. Construct the Progress key.
-        let progress_key = DataKey::Progress(learner, id);
+        let progress_key = DataKey::Progress(learner.clone(), id);
+        assert!(
+            !env.storage().persistent().has(&progress_key),
+            "Learner already enrolled"
+        );
 
-        // 5. Assert the learner is not already enrolled.
-        assert!(!env.storage().persistent().has(&progress_key));
-
-        // 6. Initialize progress to 0.
         env.storage().persistent().set(&progress_key, &0u32);
     }
 
@@ -75,7 +136,15 @@ impl CourseRegistry {
         env.storage()
             .persistent()
             .get(&DataKey::Progress(learner, id))
-            .unwrap()
+            .expect("Learner not enrolled")
+    }
+
+    /// Helper to check the current total number of courses.
+    pub fn course_count(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::CourseCount)
+            .unwrap_or(0)
     }
 }
 
