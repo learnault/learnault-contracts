@@ -23,7 +23,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                 },
                 {
-                  "u32": 3
+                  "u32": 5
                 },
                 {
                   "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
@@ -134,7 +134,7 @@
                         "symbol": "total_modules"
                       },
                       "val": {
-                        "u32": 3
+                        "u32": 5
                       }
                     }
                   ]

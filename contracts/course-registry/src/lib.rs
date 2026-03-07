@@ -131,14 +131,6 @@ impl CourseRegistry {
         env.storage().persistent().set(&progress_key, &0u32);
     }
 
-    /// Returns the number of completed modules for an enrolled learner.
-    pub fn get_progress(env: Env, learner: Address, id: u32) -> u32 {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Progress(learner, id))
-            .expect("Learner not enrolled")
-    }
-
     /// Helper to check the current total number of courses.
     pub fn course_count(env: Env) -> u32 {
         env.storage()
@@ -148,5 +140,4 @@ impl CourseRegistry {
     }
 }
 
-#[cfg(test)]
 mod test;

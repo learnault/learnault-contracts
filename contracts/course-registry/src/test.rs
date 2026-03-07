@@ -143,14 +143,14 @@ fn test_update_metadata_multiple_times() {
 // ── enroll ────────────────────────────────────────────────────────────────────
 
 #[test]
-fn test_enroll_initializes_progress_to_zero() {
+fn test_enroll_success() {
     let (env, client) = setup();
     let (_, _, id) = setup_with_course(&env, &client);
 
     let learner = Address::generate(&env);
-    client.enroll(&learner, &id);
 
-    assert_eq!(client.get_progress(&learner, &id), 0u32);
+    // If this executes without panicking, the enrollment was successful
+    client.enroll(&learner, &id);
 }
 
 #[test]
@@ -161,11 +161,9 @@ fn test_enroll_multiple_learners_same_course() {
     let learner_a = Address::generate(&env);
     let learner_b = Address::generate(&env);
 
+    // Both should succeed without panicking
     client.enroll(&learner_a, &id);
     client.enroll(&learner_b, &id);
-
-    assert_eq!(client.get_progress(&learner_a, &id), 0u32);
-    assert_eq!(client.get_progress(&learner_b, &id), 0u32);
 }
 
 #[test]
@@ -180,15 +178,14 @@ fn test_enroll_same_learner_different_courses() {
     let id_2 = client.create_course(&admin, &instructor, &8, &hash);
 
     let learner = Address::generate(&env);
+
+    // Learner should be able to enroll in both distinct courses
     client.enroll(&learner, &id_1);
     client.enroll(&learner, &id_2);
-
-    assert_eq!(client.get_progress(&learner, &id_1), 0u32);
-    assert_eq!(client.get_progress(&learner, &id_2), 0u32);
 }
 
 #[test]
-#[should_panic]
+#[should_panic(expected = "Course not found")]
 fn test_enroll_panics_when_course_does_not_exist() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
@@ -199,12 +196,14 @@ fn test_enroll_panics_when_course_does_not_exist() {
 }
 
 #[test]
-#[should_panic]
+#[should_panic(expected = "Learner already enrolled")]
 fn test_enroll_panics_when_learner_already_enrolled() {
     let (env, client) = setup();
     let (_, _, id) = setup_with_course(&env, &client);
 
     let learner = Address::generate(&env);
     client.enroll(&learner, &id);
-    client.enroll(&learner, &id); // must panic
+
+    // The second attempt must panic, proving the first enrollment was saved
+    client.enroll(&learner, &id);
 }
