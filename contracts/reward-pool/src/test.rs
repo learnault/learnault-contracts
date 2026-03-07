@@ -1,8 +1,9 @@
 #![cfg(test)]
 
 use soroban_sdk::{
+    contract, contractimpl, contracttype,
     testutils::{Address as _, Events},
-    Address, Env, String, contract, contractimpl, contracttype,
+    Address, Env, String,
 };
 
 use crate::{RewardPool, RewardPoolClient};
@@ -54,9 +55,7 @@ impl TestToken {
             panic!("insufficient balance");
         }
         let to_bal: i128 = env.storage().persistent().get(&to).unwrap_or(0);
-        env.storage()
-            .persistent()
-            .set(&from, &(from_bal - amount));
+        env.storage().persistent().set(&from, &(from_bal - amount));
         env.storage().persistent().set(&to, &(to_bal + amount));
     }
 }
@@ -131,7 +130,12 @@ fn test_fund_pool_transfers_balance() {
 
     let token_id = env.register(TestToken, ());
     let token_client = TestTokenClient::new(&env, &token_id);
-    token_client.initialize(&admin, &6u32, &String::from_str(&env, "USDC"), &String::from_str(&env, "USDC"));
+    token_client.initialize(
+        &admin,
+        &6u32,
+        &String::from_str(&env, "USDC"),
+        &String::from_str(&env, "USDC"),
+    );
 
     client.initialize(&admin, &token_id);
 
@@ -158,7 +162,12 @@ fn test_fund_pool_emits_event() {
 
     let token_id = env.register(TestToken, ());
     let token_client = TestTokenClient::new(&env, &token_id);
-    token_client.initialize(&admin, &6u32, &String::from_str(&env, "USDC"), &String::from_str(&env, "USDC"));
+    token_client.initialize(
+        &admin,
+        &6u32,
+        &String::from_str(&env, "USDC"),
+        &String::from_str(&env, "USDC"),
+    );
 
     client.initialize(&admin, &token_id);
     token_client.mint(&donor, &500i128);
