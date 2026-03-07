@@ -2,10 +2,12 @@
 
 use soroban_sdk::{
     testutils::{Address as _, Events},
-    Address, Env,
+    Address, Env, String,
 };
 
 use crate::{RewardPool, RewardPoolClient};
+use soroban_sdk::token;
+use soroban_token_contract::{Token, TokenClient};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -13,7 +15,6 @@ fn setup() -> (Env, RewardPoolClient<'static>) {
     let env = Env::default();
     env.mock_all_auths();
 
-    // Fixed: Passing the contract type first, and empty constructor args second
     let contract_id = env.register(RewardPool, ());
 
     let client = RewardPoolClient::new(&env, &contract_id);
@@ -28,10 +29,8 @@ fn test_initialize_success() {
     let admin = Address::generate(&env);
     let token = Address::generate(&env);
 
-    // Initialize the contract
     client.initialize(&admin, &token);
 
-    // Verify event was emitted
     assert_eq!(env.events().all().len(), 1);
 }
 
@@ -42,10 +41,8 @@ fn test_initialize_twice_panics() {
     let admin = Address::generate(&env);
     let token = Address::generate(&env);
 
-    // First initialization should succeed
     client.initialize(&admin, &token);
 
-    // Second initialization should panic
     client.initialize(&admin, &token);
 }
 
@@ -59,7 +56,6 @@ fn test_initialize_without_auth_panics() {
     let admin = Address::generate(&env);
     let token = Address::generate(&env);
 
-    // Try to initialize without mocking auths - should panic
     client.initialize(&admin, &token);
 }
 
@@ -69,9 +65,68 @@ fn test_initialize_with_proper_auth() {
     let admin = Address::generate(&env);
     let token = Address::generate(&env);
 
-    // Initialize with proper authentication (mocked by env.mock_all_auths())
     client.initialize(&admin, &token);
 
-    // Verify event was emitted
     assert_eq!(env.events().all().len(), 1);
+}
+
+#[test]
+fn test_fund_pool_transfers_balance() {
+    let (env, client) = setup();
+
+    let admin = Address::generate(&env);
+    let donor = Address::generate(&env);
+
+    let token_id = env.register(Token, ());
+    let token_client = TokenClient::new(&env, &token_id);
+    token_client.initialize(
+        &admin,
+        &6u32,
+        &String::from_str(&env, "USDC"),
+        &String::from_str(&env, "USDC"),
+    );
+
+    client.initialize(&admin, &token_id);
+
+    token_client.mint(&donor, &1_000i128);
+
+    let sac = token::Client::new(&env, &token_id);
+    let pool = env.current_contract_address();
+
+    let donor_before = sac.balance(&donor);
+    let pool_before = sac.balance(&pool);
+
+    client.fund_pool(&donor, &100i128);
+
+    let donor_after = sac.balance(&donor);
+    let pool_after = sac.balance(&pool);
+
+    assert_eq!(donor_before - 100, donor_after);
+    assert_eq!(pool_before + 100, pool_after);
+}
+
+#[test]
+fn test_fund_pool_emits_event() {
+    let (env, client) = setup();
+
+    let admin = Address::generate(&env);
+    let donor = Address::generate(&env);
+
+    let token_id = env.register(Token, ());
+    let token_client = TokenClient::new(&env, &token_id);
+    token_client.initialize(
+        &admin,
+        &6u32,
+        &String::from_str(&env, "USDC"),
+        &String::from_str(&env, "USDC"),
+    );
+
+    client.initialize(&admin, &token_id);
+    token_client.mint(&donor, &500i128);
+
+    let before = env.events().all().len();
+    client.fund_pool(&donor, &200i128);
+    let after = env.events().all().len();
+
+    assert_eq!(after, before + 1);
 }

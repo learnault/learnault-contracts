@@ -17,3 +17,4 @@ soroban-sdk = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+soroban-token-contract = { git = "https://github.com/stellar/soroban-token-contract", tag = "v23.0.0" }
