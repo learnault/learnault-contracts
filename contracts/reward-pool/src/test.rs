@@ -7,7 +7,7 @@ use soroban_sdk::{
 
 use crate::{RewardPool, RewardPoolClient};
 use soroban_sdk::token;
-use soroban_token_contract::{Token, TokenClient};
+use token::{Token, TokenClient};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
