@@ -264,3 +264,28 @@ fn test_multiple_courses() {
     assert_eq!(retrieved_course2.total_modules, 7);
     assert_ne!(retrieved_course1.instructor, retrieved_course2.instructor);
 }
+
+// ── get_progress ─────────────────────────────────────────────────────────────
+
+#[test]
+fn test_get_progress_returns_zero_after_enroll() {
+    let (env, client) = setup();
+    let (_, _, id) = setup_with_course(&env, &client);
+    let learner = Address::generate(&env);
+
+    client.enroll(&learner, &id);
+
+    let progress = client.get_progress(&learner, &id);
+    assert_eq!(progress, 0);
+}
+
+#[test]
+fn test_get_progress_returns_zero_when_unenrolled() {
+    let (env, client) = setup();
+    let (_, _, id) = setup_with_course(&env, &client);
+    let learner = Address::generate(&env);
+
+    // No enroll; call get_progress for unenrolled learner — must return 0 and not panic
+    let progress = client.get_progress(&learner, &id);
+    assert_eq!(progress, 0);
+}
