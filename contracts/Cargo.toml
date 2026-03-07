@@ -4,3 +4,6 @@ resolver = "2"
 
 [workspace.dependencies]
 soroban-sdk = "23"
+
+[profile.release]
+overflow-checks = true
