@@ -139,6 +139,23 @@ impl CourseRegistry {
             .unwrap_or(0)
     }
 
+    /// Returns true if the learner has completed all modules in the course.
+    pub fn is_course_finished(env: Env, learner: Address, id: u32) -> bool {
+        let course: Course = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Course(id))
+            .expect("Course not found");
+
+        let progress: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Progress(learner, id))
+            .unwrap_or(0);
+
+        progress >= course.total_modules
+    }
+
     /// Returns the full details of a specific course.
     ///
     /// # Arguments
