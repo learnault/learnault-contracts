@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    Address, Env, IntoVal, Symbol, testutils::{Address as _, Events}, vec, Map
+    testutils::{Address as _, Events},
+    vec, Address, Env, IntoVal, Map, Symbol,
 };
 
 use crate::{RewardPool, RewardPoolClient};
@@ -97,8 +98,8 @@ fn test_add_approved_spender_success() {
         (
             client.address,
             (Symbol::new(&env, "spender_added"), spender).into_val(&env),
-            empty_data.into_val(&env)
-        )
+            empty_data.into_val(&env),
+        ),
     ];
 
     assert_eq!(env.events().all(), event)
