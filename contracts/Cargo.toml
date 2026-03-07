@@ -1,6 +1,6 @@
 [workspace]
-members = ["hello-learnault"]
+members = ["course-registry", "reward-pool"]
 resolver = "2"
 
 [workspace.dependencies]
-soroban-sdk = "22.0.0"
+soroban-sdk = "23"
