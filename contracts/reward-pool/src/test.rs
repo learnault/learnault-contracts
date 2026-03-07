@@ -2,30 +2,82 @@
 
 use soroban_sdk::{
     testutils::{Address as _, Events},
-    Address, Env, String,
+    Address, Env, String, contract, contractimpl, contracttype,
 };
 
 use crate::{RewardPool, RewardPoolClient};
-use soroban_sdk::token;
-use token::{Token, TokenClient};
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum TTKey {
+    Admin,
+    Decimals,
+    Name,
+    Symbol,
+}
+
+#[contract]
+struct TestToken;
+
+#[contractimpl]
+impl TestToken {
+    pub fn initialize(env: Env, admin: Address, decimals: u32, name: String, symbol: String) {
+        admin.require_auth();
+        env.storage().instance().set(&TTKey::Admin, &admin);
+        env.storage().instance().set(&TTKey::Decimals, &decimals);
+        env.storage().instance().set(&TTKey::Name, &name);
+        env.storage().instance().set(&TTKey::Symbol, &symbol);
+    }
+
+    pub fn mint(env: Env, to: Address, amount: i128) {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&TTKey::Admin)
+            .expect("Token not initialized");
+        admin.require_auth();
+        let bal: i128 = env.storage().persistent().get(&to).unwrap_or(0);
+        env.storage().persistent().set(&to, &(bal + amount));
+    }
+
+    pub fn balance(env: Env, id: Address) -> i128 {
+        env.storage().persistent().get(&id).unwrap_or(0)
+    }
+
+    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
+        from.require_auth();
+        if amount < 0 {
+            panic!("invalid amount");
+        }
+        let from_bal: i128 = env.storage().persistent().get(&from).unwrap_or(0);
+        if from_bal < amount {
+            panic!("insufficient balance");
+        }
+        let to_bal: i128 = env.storage().persistent().get(&to).unwrap_or(0);
+        env.storage()
+            .persistent()
+            .set(&from, &(from_bal - amount));
+        env.storage().persistent().set(&to, &(to_bal + amount));
+    }
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn setup() -> (Env, RewardPoolClient<'static>) {
+fn setup() -> (Env, RewardPoolClient<'static>, Address) {
     let env = Env::default();
     env.mock_all_auths();
 
     let contract_id = env.register(RewardPool, ());
 
     let client = RewardPoolClient::new(&env, &contract_id);
-    (env, client)
+    (env, client, contract_id)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_initialize_success() {
-    let (env, client) = setup();
+    let (env, client, _) = setup();
     let admin = Address::generate(&env);
     let token = Address::generate(&env);
 
@@ -37,7 +89,7 @@ fn test_initialize_success() {
 #[test]
 #[should_panic(expected = "Already initialized")]
 fn test_initialize_twice_panics() {
-    let (env, client) = setup();
+    let (env, client, _) = setup();
     let admin = Address::generate(&env);
     let token = Address::generate(&env);
 
@@ -61,7 +113,7 @@ fn test_initialize_without_auth_panics() {
 
 #[test]
 fn test_initialize_with_proper_auth() {
-    let (env, client) = setup();
+    let (env, client, _) = setup();
     let admin = Address::generate(&env);
     let token = Address::generate(&env);
 
@@ -72,34 +124,26 @@ fn test_initialize_with_proper_auth() {
 
 #[test]
 fn test_fund_pool_transfers_balance() {
-    let (env, client) = setup();
+    let (env, client, pool_addr) = setup();
 
     let admin = Address::generate(&env);
     let donor = Address::generate(&env);
 
-    let token_id = env.register(Token, ());
-    let token_client = TokenClient::new(&env, &token_id);
-    token_client.initialize(
-        &admin,
-        &6u32,
-        &String::from_str(&env, "USDC"),
-        &String::from_str(&env, "USDC"),
-    );
+    let token_id = env.register(TestToken, ());
+    let token_client = TestTokenClient::new(&env, &token_id);
+    token_client.initialize(&admin, &6u32, &String::from_str(&env, "USDC"), &String::from_str(&env, "USDC"));
 
     client.initialize(&admin, &token_id);
 
     token_client.mint(&donor, &1_000i128);
 
-    let sac = token::Client::new(&env, &token_id);
-    let pool = env.current_contract_address();
-
-    let donor_before = sac.balance(&donor);
-    let pool_before = sac.balance(&pool);
+    let donor_before = token_client.balance(&donor);
+    let pool_before = token_client.balance(&pool_addr);
 
     client.fund_pool(&donor, &100i128);
 
-    let donor_after = sac.balance(&donor);
-    let pool_after = sac.balance(&pool);
+    let donor_after = token_client.balance(&donor);
+    let pool_after = token_client.balance(&pool_addr);
 
     assert_eq!(donor_before - 100, donor_after);
     assert_eq!(pool_before + 100, pool_after);
@@ -107,19 +151,14 @@ fn test_fund_pool_transfers_balance() {
 
 #[test]
 fn test_fund_pool_emits_event() {
-    let (env, client) = setup();
+    let (env, client, _) = setup();
 
     let admin = Address::generate(&env);
     let donor = Address::generate(&env);
 
-    let token_id = env.register(Token, ());
-    let token_client = TokenClient::new(&env, &token_id);
-    token_client.initialize(
-        &admin,
-        &6u32,
-        &String::from_str(&env, "USDC"),
-        &String::from_str(&env, "USDC"),
-    );
+    let token_id = env.register(TestToken, ());
+    let token_client = TestTokenClient::new(&env, &token_id);
+    token_client.initialize(&admin, &6u32, &String::from_str(&env, "USDC"), &String::from_str(&env, "USDC"));
 
     client.initialize(&admin, &token_id);
     token_client.mint(&donor, &500i128);
