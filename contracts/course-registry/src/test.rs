@@ -200,24 +200,6 @@ fn test_enroll_panics_when_course_does_not_exist() {
 
 #[test]
 #[should_panic]
-fn test_enroll_panics_when_course_is_inactive() {
-    let (env, client) = setup();
-    let admin = Address::generate(&env);
-    let instructor = Address::generate(&env);
-
-    client.initialize(&admin);
-    let id = client.create_course(&admin, &instructor, &5, &dummy_hash(&env));
-
-    // Deactivate by updating with a course that has active: false
-    // Since set_active was removed, directly test via a non-active state isn't
-    // possible without re-adding it — leave as compile-time reminder.
-    // TODO: re-add set_active or test deactivation once the function is restored.
-    let learner = Address::generate(&env);
-    client.enroll(&learner, &id);
-}
-
-#[test]
-#[should_panic]
 fn test_enroll_panics_when_learner_already_enrolled() {
     let (env, client) = setup();
     let (_, _, id) = setup_with_course(&env, &client);
