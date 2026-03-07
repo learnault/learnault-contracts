@@ -1,10 +1,8 @@
 #![no_std]
-use soroban_sdk::{contract, contractevent, contractimpl, Address, BytesN, Env};
 
 use soroban_sdk::{contract, contractimpl, Address, Env};
 
 pub mod types;
-use types::{Course, DataKey};
 
 pub use types::{Course, DataKey};
 
