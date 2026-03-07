@@ -378,3 +378,39 @@ fn test_is_course_finished_invalid_course_panics() {
     // Course ID 99 was never created
     client.is_course_finished(&learner, &99);
 }
+
+// ── set_course_status (Issue #4) ──────────────────────────────────────────────
+
+#[test]
+fn test_set_course_status_success() {
+    let (env, client) = setup();
+    let (admin, _, id) = setup_with_course(&env, &client);
+
+    // Deactivate the course
+    client.set_course_status(&admin, &id, &false);
+
+    // Verify it was deactivated
+    let course = client.get_course(&id);
+    assert!(!course.active);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Caller is not the protocol admin")]
+fn test_set_course_status_unauthorized_admin_panics() {
+    let (env, client) = setup();
+    let (_, _, id) = setup_with_course(&env, &client);
+    let fake_admin = Address::generate(&env);
+
+    // Random user tries to deactivate the course
+    client.set_course_status(&fake_admin, &id, &false);
+}
+
+#[test]
+#[should_panic(expected = "Course not found")]
+fn test_set_course_status_nonexistent_course() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.set_course_status(&admin, &99, &false);
+}

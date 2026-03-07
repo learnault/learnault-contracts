@@ -25,6 +25,13 @@ pub struct CourseCreated {
     pub total_modules: u32,
 }
 
+#[contractevent]
+pub struct CourseStatusChanged {
+    #[topic]
+    pub id: u32,
+    pub active: bool,
+}
+
 #[contractimpl]
 impl CourseRegistry {
     /// Sets the official Protocol Admin. Must be called once upon deployment.
@@ -137,6 +144,39 @@ impl CourseRegistry {
             .instance()
             .get(&DataKey::CourseCount)
             .unwrap_or(0)
+    }
+
+    /// Toggles a course's active status. Only callable by the Protocol Admin.
+    pub fn set_course_status(env: Env, admin: Address, id: u32, active: bool) {
+        // 1. Authenticate the admin cryptographically
+        admin.require_auth();
+
+        // 2. Verify caller is the officially registered Protocol Admin
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        assert!(
+            admin == stored_admin,
+            "Unauthorized: Caller is not the protocol admin"
+        );
+
+        // 3. Retrieve the course using the CORRECT DataKey
+        let mut course: Course = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Course(id))
+            .expect("Course not found");
+
+        // 4. Update the active status and save it
+        course.active = active;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Course(id), &course);
+
+        // 5. Emit the standard event
+        CourseStatusChanged { id, active }.publish(&env);
     }
 
     /// Returns true if the learner has completed all modules in the course.
