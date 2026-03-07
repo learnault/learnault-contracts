@@ -2,14 +2,9 @@
 name = "course-registry"
 version = "0.1.0"
 edition = "2021"
-authors = ["Learnault Team"]
-description = "Course registry contract for the Learnault platform"
-license = "MIT"
-repository = "https://github.com/your-org/learnault-contracts"
 
 [lib]
-crate-type = ["lib", "cdylib"]
-doctest = false
+crate-type = ["cdylib"]
 
 [dependencies]
 soroban-sdk = "21.7.7"

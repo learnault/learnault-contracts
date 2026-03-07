@@ -6,7 +6,6 @@ pub use types::{Course, DataKey};
 
 use soroban_sdk::{contract, contractimpl, Address, Env};
 
-/// Course registry contract: courses and learner progress.
 #[contract]
 pub struct CourseRegistry;
 
