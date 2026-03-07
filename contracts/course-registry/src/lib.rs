@@ -161,6 +161,12 @@ impl CourseRegistry {
             .get(&key)
             .expect("Course not found")
     }
+
+    /// Returns a learner's completed module count for a course. Returns 0 if the learner has not enrolled.
+    pub fn get_progress(env: Env, learner: Address, id: u32) -> u32 {
+        let key = DataKey::Progress(learner, id);
+        env.storage().persistent().get(&key).unwrap_or(0)
+    }
 }
 
 mod test;
