@@ -26,9 +26,10 @@ fn get_progress_returns_stored_value_when_enrolled() {
     let completed_modules = 5u32;
 
     env.as_contract(&contract_id, || {
-        env.storage()
-            .persistent()
-            .set(&DataKey::Progress(learner.clone(), course_id), &completed_modules);
+        env.storage().persistent().set(
+            &DataKey::Progress(learner.clone(), course_id),
+            &completed_modules,
+        );
     });
 
     let progress = client.get_progress(&learner, &course_id);
