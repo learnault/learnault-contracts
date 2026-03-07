@@ -15,6 +15,12 @@ pub struct PoolInitialized {
     pub token: Address,
 }
 
+#[contractevent]
+pub struct SpenderAdded {
+    #[topic]
+    pub spender: Address,
+}
+
 #[contractimpl]
 impl RewardPool {
     /// Initializes the RewardPool contract with admin and token addresses.
@@ -43,6 +49,40 @@ impl RewardPool {
 
         // 5. Emit PoolInitialized event
         PoolInitialized { admin, token }.publish(&env);
+    }
+
+    /// Adds a contract address to the approved spender whitelist.
+    ///
+    /// # Arguments
+    /// * `admin` - The admin address (must match stored admin)
+    /// * `spender` - The contract address to whitelist
+    ///
+    /// # Panics
+    /// * If admin does not match stored admin
+    /// * If admin authentication fails
+    pub fn add_approved_spender(env: Env, admin: Address, spender: Address) {
+        // 1. Fetch 'Admin' address from Instance storage
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+
+        // 2. Assert admin == stored_admin
+        if admin != stored_admin {
+            panic!("Unauthorized");
+        }
+
+        // 3. admin.require_auth()
+        admin.require_auth();
+
+        // 4. Save `true` to Persistent storage using DataKey::Spender(spender.clone())
+        env.storage()
+            .persistent()
+            .set(&DataKey::Spender(spender.clone()), &true);
+
+        // 5. Emit SpenderAdded event
+        SpenderAdded { spender }.publish(&env);
     }
 }
 
