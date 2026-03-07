@@ -1,9 +1,6 @@
 [workspace]
+members = ["course-registry", "reward-pool"]
 resolver = "2"
-members = [
-  "course-registry",
-  "reward-pool",
-]
 
 [workspace.dependencies]
 soroban-sdk = "23"

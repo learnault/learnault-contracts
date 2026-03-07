@@ -43,10 +43,8 @@ impl CourseRegistry {
         total_modules: u32,
         metadata_hash: BytesN<32>,
     ) -> u32 {
-        // Authenticate the caller's cryptographic signature.
         admin.require_auth();
 
-        //  Verify the caller is the actual registered protocol admin.
         let stored_admin: Address = env
             .storage()
             .instance()
@@ -57,10 +55,8 @@ impl CourseRegistry {
             "Unauthorized: Caller is not the protocol admin"
         );
 
-        // Validate inputs.
         assert!(total_modules > 0, "total_modules must be greater than 0");
 
-        // Fetch and increment the global course counter.
         let current_count: u32 = env
             .storage()
             .instance()
@@ -69,7 +65,6 @@ impl CourseRegistry {
         let new_id = current_count + 1;
         env.storage().instance().set(&DataKey::CourseCount, &new_id);
 
-        // Build and persist the Course struct.
         let course = Course {
             instructor: instructor.clone(),
             total_modules,
@@ -80,7 +75,6 @@ impl CourseRegistry {
             .persistent()
             .set(&DataKey::Course(new_id), &course);
 
-        // Emit the structured event using the V23 `.publish()` method.
         CourseCreated {
             id: new_id,
             instructor,
@@ -116,6 +110,35 @@ impl CourseRegistry {
         .publish(&env);
     }
 
+    /// Enrolls a learner in an active course, initializing their progress to 0.
+    pub fn enroll(env: Env, learner: Address, id: u32) {
+        learner.require_auth();
+
+        let course: Course = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Course(id))
+            .expect("Course not found");
+
+        assert!(course.active, "Course is not active");
+
+        let progress_key = DataKey::Progress(learner.clone(), id);
+        assert!(
+            !env.storage().persistent().has(&progress_key),
+            "Learner already enrolled"
+        );
+
+        env.storage().persistent().set(&progress_key, &0u32);
+    }
+
+    /// Returns the number of completed modules for an enrolled learner.
+    pub fn get_progress(env: Env, learner: Address, id: u32) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Progress(learner, id))
+            .expect("Learner not enrolled")
+    }
+
     /// Helper to check the current total number of courses.
     pub fn course_count(env: Env) -> u32 {
         env.storage()
@@ -125,4 +148,5 @@ impl CourseRegistry {
     }
 }
 
+#[cfg(test)]
 mod test;
