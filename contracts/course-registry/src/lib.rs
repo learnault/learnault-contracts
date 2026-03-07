@@ -25,6 +25,13 @@ pub struct CourseCreated {
     pub total_modules: u32,
 }
 
+#[contractevent]
+pub struct CourseStatusChanged {
+    #[topic]
+    pub id: u32,
+    pub active: bool,
+}
+
 #[contractimpl]
 impl CourseRegistry {
     /// Sets the official Protocol Admin. Must be called once upon deployment.
@@ -139,6 +146,39 @@ impl CourseRegistry {
             .unwrap_or(0)
     }
 
+    /// Toggles a course's active status. Only callable by the Protocol Admin.
+    pub fn set_course_status(env: Env, admin: Address, id: u32, active: bool) {
+        // 1. Authenticate the admin cryptographically
+        admin.require_auth();
+
+        // 2. Verify caller is the officially registered Protocol Admin
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        assert!(
+            admin == stored_admin,
+            "Unauthorized: Caller is not the protocol admin"
+        );
+
+        // 3. Retrieve the course using the CORRECT DataKey
+        let mut course: Course = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Course(id))
+            .expect("Course not found");
+
+        // 4. Update the active status and save it
+        course.active = active;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Course(id), &course);
+
+        // 5. Emit the standard event
+        CourseStatusChanged { id, active }.publish(&env);
+    }
+
     /// Returns true if the learner has completed all modules in the course.
     pub fn is_course_finished(env: Env, learner: Address, id: u32) -> bool {
         let course: Course = env
@@ -183,36 +223,6 @@ impl CourseRegistry {
     pub fn get_progress(env: Env, learner: Address, id: u32) -> u32 {
         let key = DataKey::Progress(learner, id);
         env.storage().persistent().get(&key).unwrap_or(0)
-    }
-
-     pub fn set_course_status(env: Env, admin: Address, id: u32, active: bool) -> Symbol {
-        // 1. Authenticate the admin (in production, this would be enforced at invocation layer)
-        // admin.require_auth();
-
-        // 2. Retrieve the course from persistent storage
-        let course_key = (symbol_short!("course"), id);
-        let (course_id, title, _): (u32, Symbol, bool) = env
-            .storage()
-            .persistent()
-            .get(&course_key)
-            .expect("Course not found");
-
-        // 3. Assert course exists (already done by expect above)
-        // 4. Update the active status
-        let updated_course = (course_id, title.clone(), active);
-        env.storage().persistent().set(&course_key, &updated_course);
-
-        // 5. Emit CourseStatusChanged event
-        let status_str = if active {
-            symbol_short!("active")
-        } else {
-            symbol_short!("inactive")
-        };
-
-        env.events()
-            .publish((symbol_short!("status"), id), (admin, status_str));
-
-        symbol_short!("success")
     }
 }
 
