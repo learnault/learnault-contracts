@@ -2,7 +2,7 @@
 
 use soroban_sdk::{
     testutils::{Address as _, Events},
-    vec, Address, Env, IntoVal, Map, Symbol,
+    token, vec, Address, Env, IntoVal, Map, Symbol, Val, Vec,
 };
 
 use crate::{RewardPool, RewardPoolClient};
@@ -161,4 +161,155 @@ fn test_add_same_spender_twice() {
     // Add same spender twice (should not panic, just overwrite)
     client.add_approved_spender(&admin, &spender);
     client.add_approved_spender(&admin, &spender);
+}
+
+// ── distribute_reward Tests ───────────────────────────────────────────────────
+
+#[test]
+fn test_distribute_reward_success() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let spender = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    // Create and register a mock token contract
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    // Initialize the reward pool
+    client.initialize(&admin, &token_id.address());
+
+    // Whitelist the spender
+    client.add_approved_spender(&admin, &spender);
+
+    // Mint tokens to the reward pool contract
+    let token_client = token::StellarAssetClient::new(&env, &token_id.address());
+    token_client.mint(&client.address, &1000);
+
+    // Distribute reward
+    client.distribute_reward(&spender, &learner, &100);
+
+    // Check events immediately after distribute_reward
+    let last_event = env.events().all().last().unwrap();
+
+    let mut data_map = Map::new(&env);
+    data_map.set(Symbol::new(&env, "amount"), 100i128);
+    let expected_event: (Address, Vec<Val>, Val) = (
+        client.address,
+        (Symbol::new(&env, "reward_distributed"), &spender, &learner).into_val(&env),
+        data_map.into_val(&env),
+    );
+
+    // Verify events match
+    assert_eq!(
+        vec![&env, last_event.clone()],
+        vec![&env, expected_event.clone()]
+    );
+
+    // Verify learner received tokens
+    let learner_balance = token_client.balance(&learner);
+    assert_eq!(learner_balance, 100);
+}
+
+#[test]
+#[should_panic(expected = "Amount must be positive")]
+fn test_distribute_reward_zero_amount() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let spender = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+    client.add_approved_spender(&admin, &spender);
+
+    // Try to distribute zero amount - should panic
+    client.distribute_reward(&spender, &learner, &0);
+}
+
+#[test]
+#[should_panic(expected = "Amount must be positive")]
+fn test_distribute_reward_negative_amount() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let spender = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+    client.add_approved_spender(&admin, &spender);
+
+    // Try to distribute negative amount - should panic
+    client.distribute_reward(&spender, &learner, &-100);
+}
+
+#[test]
+#[should_panic(expected = "Caller is not an authorized spender")]
+fn test_distribute_reward_unauthorized_spender() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let unauthorized_spender = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+
+    // Try to distribute without being whitelisted - should panic
+    client.distribute_reward(&unauthorized_spender, &learner, &100);
+}
+
+#[test]
+#[should_panic(expected = "Not initialized")]
+fn test_distribute_reward_not_initialized() {
+    let (env, client) = setup();
+    let spender = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    // Try to distribute without initializing - should panic
+    client.distribute_reward(&spender, &learner, &100);
+}
+
+#[test]
+fn test_distribute_reward_multiple_times() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let spender = Address::generate(&env);
+    let learner1 = Address::generate(&env);
+    let learner2 = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+    client.add_approved_spender(&admin, &spender);
+
+    let token_client = token::StellarAssetClient::new(&env, &token_id.address());
+    token_client.mint(&client.address, &1000);
+
+    // Distribute to multiple learners
+    client.distribute_reward(&spender, &learner1, &100);
+    client.distribute_reward(&spender, &learner2, &200);
+
+    assert_eq!(token_client.balance(&learner1), 100);
+    assert_eq!(token_client.balance(&learner2), 200);
+}
+
+#[test]
+fn test_distribute_reward_multiple_spenders() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let spender1 = Address::generate(&env);
+    let spender2 = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+    client.add_approved_spender(&admin, &spender1);
+    client.add_approved_spender(&admin, &spender2);
+
+    let token_client = token::StellarAssetClient::new(&env, &token_id.address());
+    token_client.mint(&client.address, &1000);
+
+    // Both spenders can distribute
+    client.distribute_reward(&spender1, &learner, &100);
+    client.distribute_reward(&spender2, &learner, &50);
+
+    assert_eq!(token_client.balance(&learner), 150);
 }
