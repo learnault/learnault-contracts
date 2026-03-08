@@ -46,7 +46,10 @@ impl RewardPool {
             .get(&DataKey::Token)
             .expect("Not initialized");
         let token_client = token::Client::new(&env, &token);
-        token_client.transfer(&donor, &env.current_contract_address(), &amount);
+        if amount <= 0 {
+            panic!("amount must be positive");
+        }
+        token_client.transfer(&donor, env.current_contract_address(), &amount);
         PoolFunded { donor, amount }.publish(&env);
     }
 }
