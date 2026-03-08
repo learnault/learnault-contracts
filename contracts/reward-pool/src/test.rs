@@ -313,3 +313,136 @@ fn test_distribute_reward_multiple_spenders() {
 
     assert_eq!(token_client.balance(&learner), 150);
 }
+
+// ── fund_pool Tests ───────────────────────────────────────────────────────────
+
+#[test]
+fn test_fund_pool_success() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let donor = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    // Initialize the reward pool
+    client.initialize(&admin, &token_id.address());
+
+    // Mint tokens to the donor
+    let token_client = token::StellarAssetClient::new(&env, &token_id.address());
+    token_client.mint(&donor, &1000);
+
+    // Fund the pool
+    client.fund_pool(&donor, &500);
+
+    // Verify donor's balance decreased
+    assert_eq!(token_client.balance(&donor), 500);
+
+    // Verify contract's balance increased
+    assert_eq!(token_client.balance(&client.address), 500);
+}
+
+#[test]
+fn test_fund_pool_emits_event() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let donor = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+
+    let token_client = token::StellarAssetClient::new(&env, &token_id.address());
+    token_client.mint(&donor, &1000);
+
+    client.fund_pool(&donor, &300);
+
+    // Verify event was emitted
+    let last_event = env.events().all().last().unwrap();
+
+    let mut data_map = Map::new(&env);
+    data_map.set(Symbol::new(&env, "amount"), 300i128);
+    let expected_event: (Address, Vec<Val>, Val) = (
+        client.address,
+        (Symbol::new(&env, "pool_funded"), &donor).into_val(&env),
+        data_map.into_val(&env),
+    );
+
+    assert_eq!(
+        vec![&env, last_event.clone()],
+        vec![&env, expected_event.clone()]
+    );
+}
+
+#[test]
+#[should_panic(expected = "Not initialized")]
+fn test_fund_pool_not_initialized() {
+    let (env, client) = setup();
+    let donor = Address::generate(&env);
+
+    // Try to fund without initializing - should panic
+    client.fund_pool(&donor, &100);
+}
+
+#[test]
+fn test_fund_pool_multiple_donors() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let donor1 = Address::generate(&env);
+    let donor2 = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+
+    let token_client = token::StellarAssetClient::new(&env, &token_id.address());
+    token_client.mint(&donor1, &1000);
+    token_client.mint(&donor2, &1000);
+
+    // Multiple donors fund the pool
+    client.fund_pool(&donor1, &500);
+    client.fund_pool(&donor2, &300);
+
+    // Verify balances
+    assert_eq!(token_client.balance(&donor1), 500);
+    assert_eq!(token_client.balance(&donor2), 700);
+    assert_eq!(token_client.balance(&client.address), 800);
+}
+
+#[test]
+fn test_fund_pool_multiple_times() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let donor = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+
+    let token_client = token::StellarAssetClient::new(&env, &token_id.address());
+    token_client.mint(&donor, &2000);
+
+    // Donor funds multiple times
+    client.fund_pool(&donor, &500);
+    client.fund_pool(&donor, &300);
+    client.fund_pool(&donor, &200);
+
+    // Verify balances
+    assert_eq!(token_client.balance(&donor), 1000);
+    assert_eq!(token_client.balance(&client.address), 1000);
+}
+
+#[test]
+fn test_fund_pool_zero_amount() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let donor = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+
+    let token_client = token::StellarAssetClient::new(&env, &token_id.address());
+    token_client.mint(&donor, &1000);
+
+    // Fund with zero amount (should succeed)
+    client.fund_pool(&donor, &0);
+
+    // Verify balances unchanged
+    assert_eq!(token_client.balance(&donor), 1000);
+    assert_eq!(token_client.balance(&client.address), 0);
+}
