@@ -25,6 +25,22 @@ pub struct CourseCreated {
     pub total_modules: u32,
 }
 
+#[contractevent]
+pub struct CourseStatusChanged {
+    #[topic]
+    pub id: u32,
+    pub active: bool,
+}
+
+#[contractevent]
+pub struct ModuleCompleted {
+    #[topic]
+    pub learner: Address,
+    #[topic]
+    pub course_id: u32,
+    pub new_progress: u32,
+}
+
 #[contractimpl]
 impl CourseRegistry {
     /// Sets the official Protocol Admin. Must be called once upon deployment.
@@ -139,6 +155,56 @@ impl CourseRegistry {
             .unwrap_or(0)
     }
 
+    /// Toggles a course's active status. Only callable by the Protocol Admin.
+    pub fn set_course_status(env: Env, admin: Address, id: u32, active: bool) {
+        // 1. Authenticate the admin cryptographically
+        admin.require_auth();
+
+        // 2. Verify caller is the officially registered Protocol Admin
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        assert!(
+            admin == stored_admin,
+            "Unauthorized: Caller is not the protocol admin"
+        );
+
+        // 3. Retrieve the course using the CORRECT DataKey
+        let mut course: Course = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Course(id))
+            .expect("Course not found");
+
+        // 4. Update the active status and save it
+        course.active = active;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Course(id), &course);
+
+        // 5. Emit the standard event
+        CourseStatusChanged { id, active }.publish(&env);
+    }
+
+    /// Returns true if the learner has completed all modules in the course.
+    pub fn is_course_finished(env: Env, learner: Address, id: u32) -> bool {
+        let course: Course = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Course(id))
+            .expect("Course not found");
+
+        let progress: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Progress(learner, id))
+            .unwrap_or(0);
+
+        progress >= course.total_modules
+    }
+
     /// Returns the full details of a specific course.
     ///
     /// # Arguments
@@ -166,6 +232,60 @@ impl CourseRegistry {
     pub fn get_progress(env: Env, learner: Address, id: u32) -> u32 {
         let key = DataKey::Progress(learner, id);
         env.storage().persistent().get(&key).unwrap_or(0)
+    }
+
+    /// Records a learner's completion of a module after off-chain quiz validation.
+    /// Only callable by the authorized verifier (protocol admin).
+    pub fn complete_module(env: Env, verifier: Address, learner: Address, id: u32) {
+        // 1. Authenticate the verifier's signature
+        verifier.require_auth();
+
+        // 2. Verify the verifier is the authorized protocol admin
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        assert!(
+            verifier == stored_admin,
+            "Unauthorized: Caller is not the protocol admin"
+        );
+
+        // 3. Retrieve the course to validate it exists and get total_modules
+        let course: Course = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Course(id))
+            .expect("Course not found");
+
+        // 4. Retrieve current progress (defaults to 0 if not set)
+        let current_progress: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Progress(learner.clone(), id))
+            .unwrap_or(0);
+
+        // 5. Assert current progress is less than total_modules
+        assert!(
+            current_progress < course.total_modules,
+            "Course already completed"
+        );
+
+        // 6. Increment progress by 1
+        let new_progress = current_progress + 1;
+
+        // 7. Save new progress to persistent storage
+        env.storage()
+            .persistent()
+            .set(&DataKey::Progress(learner.clone(), id), &new_progress);
+
+        // 8. Emit ModuleCompleted event
+        ModuleCompleted {
+            learner,
+            course_id: id,
+            new_progress,
+        }
+        .publish(&env);
     }
 }
 

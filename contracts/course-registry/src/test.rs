@@ -5,7 +5,7 @@ use soroban_sdk::{
     Address, BytesN, Env,
 };
 
-use crate::{CourseRegistry, CourseRegistryClient};
+use crate::{CourseRegistry, CourseRegistryClient, DataKey};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -288,4 +288,278 @@ fn test_get_progress_returns_zero_when_unenrolled() {
     // No enroll; call get_progress for unenrolled learner — must return 0 and not panic
     let progress = client.get_progress(&learner, &id);
     assert_eq!(progress, 0);
+}
+
+// ── is_course_finished tests ──────────────────────────────────────────────────
+
+#[test]
+fn test_is_course_finished_unenrolled_returns_false() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+
+    // Learner has no progress entry at all — should return false
+    assert!(!client.is_course_finished(&learner, &1));
+}
+
+#[test]
+fn test_is_course_finished_partial_progress_returns_false() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.create_course(&admin, &instructor, &5, &dummy_hash(&env));
+
+    // Manually write partial progress into storage
+    env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .set(&DataKey::Progress(learner.clone(), 1), &3u32);
+    });
+
+    assert!(!client.is_course_finished(&learner, &1));
+}
+
+#[test]
+fn test_is_course_finished_exact_progress_returns_true() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.create_course(&admin, &instructor, &4, &dummy_hash(&env));
+
+    // Progress exactly equals total_modules
+    env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .set(&DataKey::Progress(learner.clone(), 1), &4u32);
+    });
+
+    assert!(client.is_course_finished(&learner, &1));
+}
+
+#[test]
+fn test_is_course_finished_excess_progress_returns_true() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+
+    // Progress exceeds total_modules (defensive edge case)
+    env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .set(&DataKey::Progress(learner.clone(), 1), &99u32);
+    });
+
+    assert!(client.is_course_finished(&learner, &1));
+}
+
+#[test]
+#[should_panic(expected = "Course not found")]
+fn test_is_course_finished_invalid_course_panics() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+
+    // Course ID 99 was never created
+    client.is_course_finished(&learner, &99);
+}
+
+// ── set_course_status (Issue #4) ──────────────────────────────────────────────
+
+#[test]
+fn test_set_course_status_success() {
+    let (env, client) = setup();
+    let (admin, _, id) = setup_with_course(&env, &client);
+
+    // Deactivate the course
+    client.set_course_status(&admin, &id, &false);
+
+    // Verify it was deactivated
+    let course = client.get_course(&id);
+    assert!(!course.active);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Caller is not the protocol admin")]
+fn test_set_course_status_unauthorized_admin_panics() {
+    let (env, client) = setup();
+    let (_, _, id) = setup_with_course(&env, &client);
+    let fake_admin = Address::generate(&env);
+
+    // Random user tries to deactivate the course
+    client.set_course_status(&fake_admin, &id, &false);
+}
+
+#[test]
+#[should_panic(expected = "Course not found")]
+fn test_set_course_status_nonexistent_course() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.set_course_status(&admin, &99, &false);
+}
+
+// ── complete_module Tests ─────────────────────────────────────────────────────
+
+#[test]
+fn test_complete_module_increments_progress() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+
+    // Complete first module
+    client.complete_module(&admin, &learner, &course_id);
+}
+
+#[test]
+fn test_complete_module_emits_event() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+
+    client.complete_module(&admin, &learner, &course_id);
+
+    // Verify event was emitted
+    assert_eq!(env.events().all().len(), 1);
+}
+
+#[test]
+fn test_complete_module_multiple_times() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+
+    // Complete all three modules
+    client.complete_module(&admin, &learner, &course_id);
+    client.complete_module(&admin, &learner, &course_id);
+    client.complete_module(&admin, &learner, &course_id);
+}
+
+#[test]
+#[should_panic(expected = "Course already completed")]
+fn test_complete_module_exceeds_total_modules() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &instructor, &2, &dummy_hash(&env));
+
+    // Complete both modules
+    client.complete_module(&admin, &learner, &course_id);
+    client.complete_module(&admin, &learner, &course_id);
+
+    // This should panic - trying to complete a third module when only 2 exist
+    client.complete_module(&admin, &learner, &course_id);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized: Caller is not the protocol admin")]
+fn test_complete_module_unauthorized_verifier() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let fake_verifier = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+
+    // Should fail - fake_verifier is not the admin
+    client.complete_module(&fake_verifier, &learner, &course_id);
+}
+
+#[test]
+#[should_panic(expected = "Course not found")]
+fn test_complete_module_nonexistent_course() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+
+    // Should fail - course 99 doesn't exist
+    client.complete_module(&admin, &learner, &99);
+}
+
+#[test]
+fn test_complete_module_different_learners() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner1 = Address::generate(&env);
+    let learner2 = Address::generate(&env);
+
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+
+    // Both learners can progress independently
+    client.complete_module(&admin, &learner1, &course_id);
+    client.complete_module(&admin, &learner2, &course_id);
+    client.complete_module(&admin, &learner1, &course_id);
+}
+
+#[test]
+fn test_get_progress_returns_zero_initially() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+
+    // Progress should be 0 before any modules are completed
+    assert_eq!(client.get_progress(&learner, &course_id), 0);
+}
+
+#[test]
+fn test_get_progress_tracks_completion() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let instructor = Address::generate(&env);
+    let learner = Address::generate(&env);
+
+    client.initialize(&admin);
+    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env));
+
+    assert_eq!(client.get_progress(&learner, &course_id), 0);
+
+    client.complete_module(&admin, &learner, &course_id);
+    assert_eq!(client.get_progress(&learner, &course_id), 1);
+
+    client.complete_module(&admin, &learner, &course_id);
+    assert_eq!(client.get_progress(&learner, &course_id), 2);
+
+    client.complete_module(&admin, &learner, &course_id);
+    assert_eq!(client.get_progress(&learner, &course_id), 3);
 }
