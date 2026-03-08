@@ -7,3 +7,6 @@ Cargo.lock
 # Local settings
 .soroban
 .stellar
+
+# IDE settings
+.vscode/
