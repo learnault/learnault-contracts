@@ -30,6 +30,13 @@ pub struct RewardDistributed {
     pub amount: i128,
 }
 
+#[contractevent]
+pub struct PoolFunded {
+    #[topic]
+    pub donor: Address,
+    pub amount: i128,
+}
+
 #[contractimpl]
 impl RewardPool {
     /// Initializes the RewardPool contract with admin and token addresses.
@@ -148,6 +155,37 @@ impl RewardPool {
             amount,
         }
         .publish(&env);
+    }
+
+    /// Funds the reward pool with tokens from a donor.
+    ///
+    /// # Arguments
+    /// * `donor` - The address donating the tokens
+    /// * `amount` - The amount of tokens to donate
+    ///
+    /// # Panics
+    /// * If contract is not initialized
+    /// * If donor authentication fails
+    /// * If token transfer fails
+    pub fn fund_pool(env: Env, donor: Address, amount: i128) {
+        // 1. donor.require_auth()
+        donor.require_auth();
+
+        // 2. Fetch 'Token_Address' from Instance storage
+        let token_id: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("Not initialized");
+
+        // 3. Initialize token::Client::new(&env, &Token_Address)
+        let token_client = token::Client::new(&env, &token_id);
+
+        // 4. Call token_client.transfer(&donor, &env.current_contract_address(), &amount)
+        token_client.transfer(&donor, env.current_contract_address(), &amount);
+
+        // 5. Emit PoolFunded event
+        PoolFunded { donor, amount }.publish(&env);
     }
 }
 
