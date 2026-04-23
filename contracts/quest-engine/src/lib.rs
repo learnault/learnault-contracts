@@ -2,7 +2,8 @@
 
 pub mod types;
 
-use soroban_sdk::contract;
+// Added contractimpl to the import list here
+use soroban_sdk::{contract, contractimpl};
 
 #[contract]
 pub struct QuestEngineContract;
