@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "contracts/course-registry",
   "contracts/reward-pool",
+  "contracts/quest-engine"
 ]
 
 [workspace.dependencies]
