@@ -1,5 +1,5 @@
 [workspace]
-members = ["course-registry", "reward-pool"]
+members = ["course-registry", "quest-engine", "reward-pool"]
 resolver = "2"
 
 [workspace.dependencies]
