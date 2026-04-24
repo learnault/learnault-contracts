@@ -1,0 +1,18 @@
+[package]
+name = "badge-nft"
+version = "0.1.0"
+edition = "2021"
+authors = ["Learnault Team"]
+description = "Soulbound badge NFT contract for the Learnault platform"
+license = "MIT"
+repository = "https://github.com/your-org/learnault-contracts"
+
+[lib]
+crate-type = ["lib", "cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
