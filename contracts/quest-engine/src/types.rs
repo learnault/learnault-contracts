@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address};
+use soroban_sdk::{contracttype, Address, BytesN};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -13,6 +13,7 @@ pub struct Quest {
     pub employer: Address,
     pub reward_amount: i128,
     pub quest_type: QuestType,
+    pub metadata_hash: BytesN<32>,
     pub active: bool,
 }
 
@@ -30,4 +31,5 @@ pub enum DataKey {
     Quest(u32),
     Submission(Address, u32), // (Submitter Address, Quest ID)
     Token,
+    QuestCounter,
 }
