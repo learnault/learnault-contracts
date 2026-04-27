@@ -264,3 +264,170 @@ fn test_get_submission_returns_none_for_nonexistent() {
     let learner = Address::generate(&_env);
     assert_eq!(client.get_submission(&learner, &999), None);
 }
+
+// ── review_submission Tests ──────────────────────────────────────────────────
+
+#[test]
+fn test_review_submission_approve_success() {
+    let (env, client, token_id) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[16u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[17u8; 32]);
+
+    // Fund employer and create quest
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+
+    // Submit proof
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+
+    // Check initial balances
+    assert_eq!(token_balance(&env, &token_id, &client.address), reward_amount);
+    assert_eq!(token_balance(&env, &token_id, &learner), 0);
+
+    // Approve submission
+    client.review_submission(&employer, &learner, &quest_id, &true);
+
+    // Verify funds transferred
+    assert_eq!(token_balance(&env, &token_id, &client.address), 0);
+    assert_eq!(token_balance(&env, &token_id, &learner), reward_amount);
+
+    // Verify submission status updated
+    let submission = client.get_submission(&learner, &quest_id).unwrap();
+    assert_eq!(submission.status, SubmissionStatus::Approved);
+}
+
+#[test]
+fn test_review_submission_reject_success() {
+    let (env, client, token_id) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[18u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[19u8; 32]);
+
+    // Fund employer and create quest
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+
+    // Submit proof
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+
+    // Check initial balances (funds still locked)
+    assert_eq!(token_balance(&env, &token_id, &client.address), reward_amount);
+    assert_eq!(token_balance(&env, &token_id, &learner), 0);
+
+    // Reject submission
+    client.review_submission(&employer, &learner, &quest_id, &false);
+
+    // Verify funds remain locked
+    assert_eq!(token_balance(&env, &token_id, &client.address), reward_amount);
+    assert_eq!(token_balance(&env, &token_id, &learner), 0);
+
+    // Verify submission status updated
+    let submission = client.get_submission(&learner, &quest_id).unwrap();
+    assert_eq!(submission.status, SubmissionStatus::Rejected);
+}
+
+#[test]
+fn test_review_submission_emits_event() {
+    let (env, client, token_id) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[20u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[21u8; 32]);
+
+    // Fund employer and create quest
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+
+    // Submit proof
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+
+    // Approve submission
+    client.review_submission(&employer, &learner, &quest_id, &true);
+
+    // Verify SubmissionReviewed event was emitted
+    let events = env.events().all();
+    assert!(
+        !events.is_empty(),
+        "Expected at least 1 event, got {}",
+        events.len()
+    );
+}
+
+#[test]
+#[should_panic(expected = "Quest not found")]
+fn test_review_submission_nonexistent_quest_panics() {
+    let (_env, client, _token_id) = setup();
+    let employer = Address::generate(&_env);
+    let learner = Address::generate(&_env);
+
+    client.review_submission(&employer, &learner, &999, &true);
+}
+
+#[test]
+#[should_panic(expected = "Only the quest employer can review submissions")]
+fn test_review_submission_wrong_employer_panics() {
+    let (env, client, token_id) = setup();
+    let employer = Address::generate(&env);
+    let wrong_employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[22u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[23u8; 32]);
+
+    // Fund employer and create quest
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+
+    // Submit proof
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+
+    // Try to review with wrong employer
+    client.review_submission(&wrong_employer, &learner, &quest_id, &true);
+}
+
+#[test]
+#[should_panic(expected = "Submission not found")]
+fn test_review_submission_nonexistent_submission_panics() {
+    let (env, client, token_id) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[24u8; 32]);
+
+    // Fund employer and create quest
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+
+    // Try to review without submission
+    client.review_submission(&employer, &learner, &quest_id, &true);
+}
+
+#[test]
+#[should_panic(expected = "Submission is not pending review")]
+fn test_review_submission_already_reviewed_panics() {
+    let (env, client, token_id) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[25u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[26u8; 32]);
+
+    // Fund employer and create quest
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+
+    // Submit proof
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+
+    // Review once
+    client.review_submission(&employer, &learner, &quest_id, &true);
+
+    // Try to review again - should panic
+    client.review_submission(&employer, &learner, &quest_id, &false);
+}
