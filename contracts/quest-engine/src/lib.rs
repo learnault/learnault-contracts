@@ -1,7 +1,7 @@
 #![no_std]
 
 pub mod types;
-use types::{DataKey, Quest, QuestType};
+use types::{DataKey, Quest, QuestType, Submission, SubmissionStatus};
 
 use soroban_sdk::{contract, contractevent, contractimpl, token, Address, BytesN, Env};
 
@@ -12,6 +12,15 @@ pub struct QuestCreated {
     #[topic]
     pub quest_id: u32,
     pub reward_amount: i128,
+}
+
+#[contractevent]
+pub struct ProofSubmitted {
+    #[topic]
+    pub learner: Address,
+    #[topic]
+    pub quest_id: u32,
+    pub proof_hash: BytesN<32>,
 }
 
 #[contract]
@@ -89,6 +98,53 @@ impl QuestEngineContract {
     /// Returns a quest by its ID.
     pub fn get_quest(env: Env, quest_id: u32) -> Option<Quest> {
         env.storage().persistent().get(&DataKey::Quest(quest_id))
+    }
+
+    /// Allows a learner to submit proof for a build quest.
+    pub fn submit_proof(env: Env, learner: Address, quest_id: u32, proof_hash: BytesN<32>) {
+        // 1. learner.require_auth()
+        learner.require_auth();
+
+        // 2. Retrieve Quest. Assert it is active and QuestType == Build.
+        let quest: Quest = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Quest(quest_id))
+            .expect("Quest not found");
+        if !quest.active {
+            panic!("Quest is not active");
+        }
+        if quest.quest_type != QuestType::Build {
+            panic!("Only Build quests accept submissions");
+        }
+
+        // 3. Construct DataKey::Submission(learner, quest_id).
+        let submission_key = DataKey::Submission(learner.clone(), quest_id);
+
+        // 4. Assert a submission doesn't already exist.
+        if env.storage().persistent().has(&submission_key) {
+            panic!("Submission already exists");
+        }
+
+        // 5. Save struct { proof_hash, status: SubmissionStatus::Pending } to storage.
+        let submission = Submission {
+            proof_hash: proof_hash.clone(),
+            status: SubmissionStatus::Pending,
+        };
+        env.storage().persistent().set(&submission_key, &submission);
+
+        // 6. Emit ProofSubmitted event.
+        ProofSubmitted {
+            learner,
+            quest_id,
+            proof_hash,
+        }
+        .publish(&env);
+    }
+
+    /// Returns a submission by learner and quest ID.
+    pub fn get_submission(env: Env, learner: Address, quest_id: u32) -> Option<Submission> {
+        env.storage().persistent().get(&DataKey::Submission(learner, quest_id))
     }
 }
 

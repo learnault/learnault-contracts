@@ -27,6 +27,13 @@ pub enum SubmissionStatus {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Submission {
+    pub proof_hash: BytesN<32>,
+    pub status: SubmissionStatus,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Quest(u32),
     Submission(Address, u32), // (Submitter Address, Quest ID)

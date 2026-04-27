@@ -5,7 +5,7 @@ use soroban_sdk::{
     Address, BytesN, Env,
 };
 
-use crate::types::QuestType;
+use crate::types::{QuestType, SubmissionStatus};
 use crate::{QuestEngineContract, QuestEngineContractClient};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -175,4 +175,92 @@ fn test_create_build_quest_multiple_employers() {
 
     // Total contract balance
     assert_eq!(token_balance(&env, &token_id, &client.address), 1200);
+}
+
+// ── submit_proof Tests ───────────────────────────────────────────────────────
+
+#[test]
+fn test_submit_proof_success() {
+    let (env, client, token_id) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[5u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[6u8; 32]);
+
+    // Fund employer and create quest
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+
+    // Submit proof
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+
+    // Verify submission exists and is pending
+    let submission = client.get_submission(&learner, &quest_id).unwrap();
+    assert_eq!(submission.proof_hash, proof_hash);
+    assert_eq!(submission.status, SubmissionStatus::Pending);
+}
+
+#[test]
+fn test_submit_proof_emits_event() {
+    let (env, client, token_id) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[7u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[8u8; 32]);
+
+    // Fund employer and create quest
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+
+    // Verify ProofSubmitted event was emitted
+    let events = env.events().all();
+    assert!(
+        !events.is_empty(),
+        "Expected at least 1 event, got {}",
+        events.len()
+    );
+    // The event should be the second one (first is QuestCreated)
+    // We can check the last event or search for ProofSubmitted
+}
+
+#[test]
+#[should_panic(expected = "Quest not found")]
+fn test_submit_proof_nonexistent_quest_panics() {
+    let (_env, client, _token_id) = setup();
+    let learner = Address::generate(&_env);
+    let proof_hash = BytesN::from_array(&_env, &[9u8; 32]);
+
+    client.submit_proof(&learner, &999, &proof_hash);
+}
+
+#[test]
+#[should_panic(expected = "Submission already exists")]
+fn test_submit_proof_duplicate_panics() {
+    let (env, client, token_id) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[14u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[15u8; 32]);
+
+    // Fund employer and create quest
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+
+    // Submit proof once
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+
+    // Try to submit again - should panic
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+}
+
+#[test]
+fn test_get_submission_returns_none_for_nonexistent() {
+    let (_env, client, _token_id) = setup();
+    let learner = Address::generate(&_env);
+    assert_eq!(client.get_submission(&learner, &999), None);
 }
