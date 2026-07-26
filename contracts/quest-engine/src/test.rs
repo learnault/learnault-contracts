@@ -1,9 +1,4 @@
-
-use soroban_sdk::{
-    contract, contractimpl,
-    testutils::{Address as _},
-    Address, BytesN, Env,
-};
+use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env};
 
 use crate::types::QuestType;
 use crate::{QuestEngineContract, QuestEngineContractClient};
