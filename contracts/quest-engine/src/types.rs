@@ -43,4 +43,5 @@ pub enum DataKey {
     RewardPool,
     IsPaused,
     StakeVault,
+    ExploreVerification(Address, u32), // (Learner Address, Quest ID)
 }
