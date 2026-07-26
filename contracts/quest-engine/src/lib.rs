@@ -566,86 +566,84 @@ impl QuestEngineContract {
         .publish(&env);
     }
 
-   /// Verifies an Explore Quest completion and triggers payout from RewardPool.
-/// Only the admin can call this function to reward off-chain actions.
-///
-/// # Arguments
-/// * `admin` - The admin address (must match stored admin)
-/// * `learner` - The learner address to receive the reward
-/// * `quest_id` - The ID of the Explore Quest to verify
-///
-/// # Panics
-/// * If admin authentication fails
-/// * If admin does not match stored admin
-/// * If quest is not found
-/// * If quest type is not Explore
-/// * If learner has already been verified for this quest
-/// * If contract is not initialized
-pub fn verify_explore_quest(env: Env, admin: Address, learner: Address, quest_id: u32) {
-    // 1. admin.require_auth()
-    admin.require_auth();
+    /// Verifies an Explore Quest completion and triggers payout from RewardPool.
+    /// Only the admin can call this function to reward off-chain actions.
+    ///
+    /// # Arguments
+    /// * `admin` - The admin address (must match stored admin)
+    /// * `learner` - The learner address to receive the reward
+    /// * `quest_id` - The ID of the Explore Quest to verify
+    ///
+    /// # Panics
+    /// * If admin authentication fails
+    /// * If admin does not match stored admin
+    /// * If quest is not found
+    /// * If quest type is not Explore
+    /// * If learner has already been verified for this quest
+    /// * If contract is not initialized
+    pub fn verify_explore_quest(env: Env, admin: Address, learner: Address, quest_id: u32) {
+        // 1. admin.require_auth()
+        admin.require_auth();
 
-    // 2. Verify admin
-    let stored_admin: Address = env
-        .storage()
-        .instance()
-        .get(&DataKey::Admin)
-        .expect("Not initialized");
-    assert!(admin == stored_admin, "Unauthorized");
+        // 2. Verify admin
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        assert!(admin == stored_admin, "Unauthorized");
 
-    // 3. Get quest
-    let quest: Quest = env
-        .storage()
-        .persistent()
-        .get(&DataKey::Quest(quest_id))
-        .expect("Quest not found");
+        // 3. Get quest
+        let quest: Quest = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Quest(quest_id))
+            .expect("Quest not found");
 
-    // 4. Assert quest type is Explore
-    assert!(
-        quest.quest_type == QuestType::Explore,
-        "Not an Explore quest"
-    );
+        // 4. Assert quest type is Explore
+        assert!(
+            quest.quest_type == QuestType::Explore,
+            "Not an Explore quest"
+        );
 
-    // 5.  NEW: Check if learner was already verified for this quest
-    let verification_key = DataKey::ExploreVerification(learner.clone(), quest_id);
-    if env.storage().persistent().has(&verification_key) {
-        panic!("Learner already verified for this quest");
+        // 5.  NEW: Check if learner was already verified for this quest
+        let verification_key = DataKey::ExploreVerification(learner.clone(), quest_id);
+        if env.storage().persistent().has(&verification_key) {
+            panic!("Learner already verified for this quest");
+        }
+
+        // 6. Get reward pool address and create client
+        let reward_pool_address: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::RewardPool)
+            .expect("Not initialized");
+        let reward_pool_client = RewardPoolClient::new(&env, &reward_pool_address);
+
+        // 7. Distribute reward from RewardPool
+        reward_pool_client.distribute_reward(
+            &env.current_contract_address(),
+            &learner,
+            &quest.reward_amount,
+        );
+
+        // 8.   NEW: Persist the verification marker after successful payout
+        env.storage().persistent().set(&verification_key, &true);
+
+        // 9. Emit ExploreQuestVerified event
+        ExploreQuestVerified {
+            admin,
+            learner,
+            quest_id,
+            amount: quest.reward_amount,
+        }
+        .publish(&env);
     }
 
-    // 6. Get reward pool address and create client
-    let reward_pool_address: Address = env
-        .storage()
-        .instance()
-        .get(&DataKey::RewardPool)
-        .expect("Not initialized");
-    let reward_pool_client = RewardPoolClient::new(&env, &reward_pool_address);
-
-    // 7. Distribute reward from RewardPool
-    reward_pool_client.distribute_reward(
-        &env.current_contract_address(),
-        &learner,
-        &quest.reward_amount,
-    );
-
-    // 8.   NEW: Persist the verification marker after successful payout
-    env.storage()
-        .persistent()
-        .set(&verification_key, &true);
-
-    // 9. Emit ExploreQuestVerified event
-    ExploreQuestVerified {
-        admin,
-        learner,
-        quest_id,
-        amount: quest.reward_amount,
+    pub fn is_explore_verified(env: Env, learner: Address, quest_id: u32) -> bool {
+        let key = DataKey::ExploreVerification(learner, quest_id);
+        env.storage().persistent().get(&key).unwrap_or(false)
     }
-    .publish(&env);
-}
-
-pub fn is_explore_verified(env: Env, learner: Address, quest_id: u32) -> bool {
-    let key = DataKey::ExploreVerification(learner, quest_id);
-    env.storage().persistent().get(&key).unwrap_or(false)
-}
 }
 
 #[cfg(test)]
