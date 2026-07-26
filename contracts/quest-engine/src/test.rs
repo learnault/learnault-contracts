@@ -1,12 +1,11 @@
-#![cfg(test)]
 
 use soroban_sdk::{
     contract, contractimpl,
-    testutils::{Address as _, Events},
+    testutils::{Address as _},
     Address, BytesN, Env,
 };
 
-use crate::types::{QuestType, SubmissionStatus};
+use crate::types::QuestType;
 use crate::{QuestEngineContract, QuestEngineContractClient};
 
 // ── Mock StakeVault Contract ─────────────────────────────────────────────────
