@@ -1,13 +1,11 @@
 use soroban_sdk::{contracttype, Address, BytesN};
 
-
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum QuestType {
     Build,
     Explore,
 }
-
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -20,7 +18,6 @@ pub struct Quest {
     pub has_approved_submission: bool,
 }
 
-
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SubmissionStatus {
@@ -29,14 +26,12 @@ pub enum SubmissionStatus {
     Rejected,
 }
 
-
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Submission {
     pub proof_hash: BytesN<32>,
     pub status: SubmissionStatus,
 }
-
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -50,6 +45,3 @@ pub enum DataKey {
     IsPaused,
     StakeVault,
 }
-
-
-
