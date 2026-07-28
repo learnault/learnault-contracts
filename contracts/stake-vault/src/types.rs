@@ -38,4 +38,3 @@ pub fn default_multiplier_tiers(env: &Env) -> Vec<MultiplierTier> {
         ],
     )
 }
-

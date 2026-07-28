@@ -352,4 +352,3 @@ fn test_set_multiplier_tiers_invalid_multiplier() {
 
     client.set_multiplier_tiers(&admin, &invalid_tiers);
 }
-
