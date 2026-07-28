@@ -105,6 +105,7 @@ fn test_create_build_quest_success() {
     assert_eq!(quest.quest_type, QuestType::Build);
     assert_eq!(quest.metadata_hash, metadata_hash);
     assert!(quest.active);
+    assert!(!quest.has_approved_submission);
 }
 
 #[test]
@@ -488,6 +489,76 @@ fn test_refund_quest_success() {
 
     let quest = client.get_quest(&quest_id).unwrap();
     assert!(!quest.active);
+}
+
+#[test]
+#[should_panic(expected = "Cannot refund quest after approved submission")]
+fn test_refund_quest_after_approved_submission_panics() {
+    let (env, client, token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[33u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[34u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+    client.review_submission(&employer, &learner, &quest_id, &true);
+
+    client.refund_quest(&employer, &quest_id);
+}
+
+#[test]
+fn test_refund_quest_after_rejected_submission_still_succeeds() {
+    let (env, client, token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[35u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[36u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+    client.review_submission(&employer, &learner, &quest_id, &false);
+
+    client.refund_quest(&employer, &quest_id);
+
+    assert_eq!(token_balance(&env, &token_id, &client.address), 0);
+    assert_eq!(token_balance(&env, &token_id, &employer), reward_amount);
+
+    let quest = client.get_quest(&quest_id).unwrap();
+    assert!(!quest.active);
+    assert!(!quest.has_approved_submission);
+}
+
+#[test]
+fn test_refund_quest_before_submission_approval_still_succeeds() {
+    let (env, client, token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[37u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[38u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+    client.refund_quest(&employer, &quest_id);
+
+    assert_eq!(token_balance(&env, &token_id, &client.address), 0);
+    assert_eq!(token_balance(&env, &token_id, &employer), reward_amount);
+
+    let submission = client.get_submission(&learner, &quest_id).unwrap();
+    assert_eq!(submission.status, SubmissionStatus::Pending);
+
+    let quest = client.get_quest(&quest_id).unwrap();
+    assert!(!quest.active);
+    assert!(!quest.has_approved_submission);
 }
 
 #[test]

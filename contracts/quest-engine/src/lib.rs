@@ -180,6 +180,7 @@ impl QuestEngineContract {
             quest_type: QuestType::Build,
             metadata_hash,
             active: true,
+            has_approved_submission: false,
         };
 
         // 6. Save to Persistent storage.
@@ -248,6 +249,7 @@ impl QuestEngineContract {
             quest_type: QuestType::Explore,
             metadata_hash,
             active: true,
+            has_approved_submission: false,
         };
 
         // 5. Save to Persistent storage
@@ -340,7 +342,7 @@ impl QuestEngineContract {
         employer.require_auth();
 
         // 2. Retrieve Quest. Assert quest.employer == employer.
-        let quest: Quest = env
+        let mut quest: Quest = env
             .storage()
             .persistent()
             .get(&DataKey::Quest(quest_id))
@@ -404,6 +406,7 @@ impl QuestEngineContract {
             token_client.transfer(&env.current_contract_address(), &learner, &learner_amount);
 
             submission.status = SubmissionStatus::Approved;
+            quest.has_approved_submission = true;
         } else {
             // 5. If approve == false:
             // a. Update submission status to Rejected.
@@ -412,6 +415,9 @@ impl QuestEngineContract {
 
         // 6. Save updated submission to Persistent storage.
         env.storage().persistent().set(&submission_key, &submission);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Quest(quest_id), &quest);
 
         // 7. Emit SubmissionReviewed event.
         SubmissionReviewed {
@@ -437,6 +443,9 @@ impl QuestEngineContract {
         }
         if !quest.active {
             panic!("Quest already inactive");
+        }
+        if quest.has_approved_submission {
+            panic!("Cannot refund quest after approved submission");
         }
 
         quest.active = false;
@@ -482,7 +491,7 @@ impl QuestEngineContract {
 
         employer.require_auth();
 
-        let quest: Quest = env
+        let mut quest: Quest = env
             .storage()
             .persistent()
             .get(&DataKey::Quest(quest_id))
@@ -537,6 +546,13 @@ impl QuestEngineContract {
             approved_count += 1;
         }
 
+        if approved_count > 0 {
+            quest.has_approved_submission = true;
+            env.storage()
+                .persistent()
+                .set(&DataKey::Quest(quest_id), &quest);
+        }
+
         BatchReviewed {
             employer,
             quest_id,
@@ -581,10 +597,8 @@ impl QuestEngineContract {
     /// * If quest type is not Explore
     /// * If contract is not initialized
     pub fn verify_explore_quest(env: Env, admin: Address, learner: Address, quest_id: u32) {
-        // 1. admin.require_auth()
         admin.require_auth();
 
-        // 2. Verify admin
         let stored_admin: Address = env
             .storage()
             .instance()
@@ -592,20 +606,17 @@ impl QuestEngineContract {
             .expect("Not initialized");
         assert!(admin == stored_admin, "Unauthorized");
 
-        // 3. Get quest
         let quest: Quest = env
             .storage()
             .persistent()
             .get(&DataKey::Quest(quest_id))
             .expect("Quest not found");
 
-        // 4. Assert quest type is Explore
         assert!(
             quest.quest_type == QuestType::Explore,
             "Not an Explore quest"
         );
 
-        // 5. Get reward pool address and create client
         let reward_pool_address: Address = env
             .storage()
             .instance()
@@ -613,14 +624,12 @@ impl QuestEngineContract {
             .expect("Not initialized");
         let reward_pool_client = RewardPoolClient::new(&env, &reward_pool_address);
 
-        // 6. Distribute reward from RewardPool
         reward_pool_client.distribute_reward(
             &env.current_contract_address(),
             &learner,
             &quest.reward_amount,
         );
 
-        // 7. Emit ExploreQuestVerified event
         ExploreQuestVerified {
             admin,
             learner,

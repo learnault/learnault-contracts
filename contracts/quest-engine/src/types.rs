@@ -15,6 +15,7 @@ pub struct Quest {
     pub quest_type: QuestType,
     pub metadata_hash: BytesN<32>,
     pub active: bool,
+    pub has_approved_submission: bool,
 }
 
 #[contracttype]
