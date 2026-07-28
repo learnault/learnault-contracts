@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 4,
+    "address": 3,
     "nonce": 0,
     "mux_id": 0
   },
@@ -23,13 +23,13 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                 },
                 {
-                  "u32": 3
+                  "u32": 5
                 },
                 {
                   "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
                 },
                 {
-                  "i128": "100000000"
+                  "i128": "500000000"
                 }
               ]
             }
@@ -116,7 +116,7 @@
                         "symbol": "reward_amount"
                       },
                       "val": {
-                        "i128": "100000000"
+                        "i128": "500000000"
                       }
                     },
                     {
@@ -124,7 +124,7 @@
                         "symbol": "total_modules"
                       },
                       "val": {
-                        "u32": 3
+                        "u32": 5
                       }
                     }
                   ]
