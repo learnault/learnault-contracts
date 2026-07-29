@@ -75,6 +75,34 @@ fn token_balance(env: &Env, token_id: &Address, of: &Address) -> i128 {
     soroban_sdk::token::Client::new(env, token_id).balance(of)
 }
 
+fn setup_with_multiplier(multiplier: u32) -> (
+    Env,
+    QuestEngineContractClient<'static>,
+    Address,
+    Address,
+    Address,
+    Address,
+) {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(QuestEngineContract, ());
+    let client = QuestEngineContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
+
+    let stake_vault_id = env.register(MockStakeVault, ());
+    let reward_pool_id = env.register(MockRewardPool, ());
+
+    let admin = Address::generate(&env);
+    client.initialize(&admin, &token_id, &reward_pool_id, &stake_vault_id);
+
+    (env, client, token_id, reward_pool_id, admin, stake_vault_id)
+}
+
 // ── Initialize Tests ─────────────────────────────────────────────────────────
 
 #[test]
