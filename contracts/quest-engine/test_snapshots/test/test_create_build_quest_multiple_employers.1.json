@@ -357,10 +357,26 @@
                     },
                     {
                       "key": {
+                        "symbol": "consumed_amount"
+                      },
+                      "val": {
+                        "i128": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "employer"
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "has_approved_submission"
+                      },
+                      "val": {
+                        "bool": false
                       }
                     },
                     {
@@ -385,7 +401,23 @@
                     },
                     {
                       "key": {
+                        "symbol": "refunded_amount"
+                      },
+                      "val": {
+                        "i128": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "reward_amount"
+                      },
+                      "val": {
+                        "i128": "500"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "total_funded"
                       },
                       "val": {
                         "i128": "500"
@@ -447,10 +479,26 @@
                     },
                     {
                       "key": {
+                        "symbol": "consumed_amount"
+                      },
+                      "val": {
+                        "i128": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "employer"
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "has_approved_submission"
+                      },
+                      "val": {
+                        "bool": false
                       }
                     },
                     {
@@ -475,7 +523,23 @@
                     },
                     {
                       "key": {
+                        "symbol": "refunded_amount"
+                      },
+                      "val": {
+                        "i128": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "reward_amount"
+                      },
+                      "val": {
+                        "i128": "700"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "total_funded"
                       },
                       "val": {
                         "i128": "700"
