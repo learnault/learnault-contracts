@@ -451,7 +451,11 @@ impl QuestEngineContract {
 
             // Transfer fee and base payout from quest escrow.
             token_client.transfer(&env.current_contract_address(), &reward_pool, &fee);
-            token_client.transfer(&env.current_contract_address(), &learner, &base_learner_amount);
+            token_client.transfer(
+                &env.current_contract_address(),
+                &learner,
+                &base_learner_amount,
+            );
 
             // If the multiplier produces a boost, draw the delta from the RewardPool.
             if boost_delta > 0 {

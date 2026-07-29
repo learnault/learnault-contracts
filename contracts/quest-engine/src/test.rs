@@ -739,7 +739,10 @@ fn test_review_submission_with_120_multiplier() {
     // = fee + (pre-funded delta) - delta = fee.
     assert_eq!(token_balance(&env, &token_id, &reward_pool_id), fee);
     // A staked learner receives strictly more than a non-staked learner.
-    assert!(boosted > base, "Staked learner must receive more than non-staked");
+    assert!(
+        boosted > base,
+        "Staked learner must receive more than non-staked"
+    );
 }
 
 #[test]
