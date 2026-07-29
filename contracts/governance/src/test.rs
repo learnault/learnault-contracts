@@ -496,4 +496,3 @@ fn test_create_proposal_emits_event() {
     governance_client.create_proposal(&proposer, &meta_hash, &1_000u64);
     assert_eq!(env.events().all().len(), 1);
 }
-
