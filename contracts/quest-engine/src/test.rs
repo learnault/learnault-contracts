@@ -76,7 +76,7 @@ fn token_balance(env: &Env, token_id: &Address, of: &Address) -> i128 {
 }
 
 fn setup_with_multiplier(
-    multiplier: u32,
+    _multiplier: u32,
 ) -> (
     Env,
     QuestEngineContractClient<'static>,
@@ -446,7 +446,7 @@ fn test_refund_returns_only_unspent_balance_after_rejection() {
 fn test_refund_after_capped_multiplier_returns_leftover_only() {
     // With a >1.0x multiplier plus fees, the full escrow is consumed and any
     // subsequent refund attempt has nothing to return.
-    let (env, client, token_id, reward_pool) = setup_with_multiplier(120);
+    let (env, client, token_id, reward_pool, _admin, _stake_vault_id) = setup_with_multiplier(120);
     let employer = Address::generate(&env);
     let learner = Address::generate(&env);
     let reward_amount: i128 = 1000;
