@@ -75,7 +75,9 @@ fn token_balance(env: &Env, token_id: &Address, of: &Address) -> i128 {
     soroban_sdk::token::Client::new(env, token_id).balance(of)
 }
 
-fn setup_with_multiplier(multiplier: u32) -> (
+fn setup_with_multiplier(
+    multiplier: u32,
+) -> (
     Env,
     QuestEngineContractClient<'static>,
     Address,
