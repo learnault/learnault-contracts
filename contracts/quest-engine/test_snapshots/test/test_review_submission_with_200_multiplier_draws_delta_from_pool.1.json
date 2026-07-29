@@ -91,7 +91,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 },
                 {
-                  "i128": "170"
+                  "i128": "850"
                 }
               ]
             }
@@ -116,7 +116,7 @@
                   "i128": "1000"
                 },
                 {
-                  "bytes": "3434343434343434343434343434343434343434343434343434343434343434"
+                  "bytes": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
                 }
               ]
             }
@@ -162,7 +162,7 @@
                   "u32": 1
                 },
                 {
-                  "bytes": "3535353535353535353535353535353535353535353535353535353535353535"
+                  "bytes": "5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b"
                 }
               ]
             }
@@ -347,7 +347,7 @@
                         "symbol": "metadata_hash"
                       },
                       "val": {
-                        "bytes": "3434343434343434343434343434343434343434343434343434343434343434"
+                        "bytes": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
                       }
                     },
                     {
@@ -443,7 +443,7 @@
                         "symbol": "proof_hash"
                       },
                       "val": {
-                        "bytes": "3535353535353535353535353535353535353535353535353535353535353535"
+                        "bytes": "5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b"
                       }
                     },
                     {
@@ -1083,7 +1083,7 @@
                         "symbol": "amount"
                       },
                       "val": {
-                        "i128": "1020"
+                        "i128": "1700"
                       }
                     },
                     {

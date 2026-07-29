@@ -420,14 +420,13 @@ impl QuestEngineContract {
             let fee = (quest.reward_amount * 15) / 100;
             let base_learner_amount = quest.reward_amount - fee;
 
-            // Enforce quest-specific budget: the escrow must still hold at least
-            // one full per-submission payout (fee + base learner amount).
+            // Enforce quest-specific budget: escrow must cover fee + base_learner_amount.
             let remaining = quest.remaining_budget();
             if remaining < quest.reward_amount {
                 panic!("Insufficient quest budget");
             }
 
-            // Fetch stake vault and get multiplier
+            // Fetch the learner's staking multiplier (basis-point math: 100 = 1.0×, 120 = 1.2×).
             let stake_vault_address: Address = env
                 .storage()
                 .instance()
@@ -436,17 +435,13 @@ impl QuestEngineContract {
             let stake_vault_client = StakeVaultClient::new(&env, &stake_vault_address);
             let multiplier = stake_vault_client.get_multiplier(&learner);
 
-            // Apply multiplier (basis points: 100 = 1.0x, 120 = 1.2x, etc.).
-            // The boost is capped by whatever escrow remains after paying the
-            // fee, so we never overspend the quest budget even when the
-            // multiplier would compute a larger payout.
-            let calculated_boost = (base_learner_amount * multiplier as i128) / 100;
-            let max_learner_amount = remaining - fee;
-            let learner_amount = if calculated_boost > max_learner_amount {
-                max_learner_amount
-            } else {
-                calculated_boost
-            };
+            // Compute the real boosted payout.
+            let boosted_amount = (base_learner_amount * multiplier as i128) / 100;
+
+            // The boost delta above the base payout is drawn from the RewardPool —
+            // the explicit separate funding source. If the RewardPool lacks sufficient
+            // balance the token transfer fails deterministically.
+            let boost_delta = boosted_amount - base_learner_amount;
 
             let reward_pool: Address = env
                 .storage()
@@ -454,12 +449,24 @@ impl QuestEngineContract {
                 .get(&DataKey::RewardPool)
                 .expect("Not initialized");
 
+            // Transfer fee and base payout from quest escrow.
             token_client.transfer(&env.current_contract_address(), &reward_pool, &fee);
-            token_client.transfer(&env.current_contract_address(), &learner, &learner_amount);
+            token_client.transfer(&env.current_contract_address(), &learner, &base_learner_amount);
+
+            // If the multiplier produces a boost, draw the delta from the RewardPool.
+            if boost_delta > 0 {
+                let reward_pool_client = RewardPoolClient::new(&env, &reward_pool);
+                reward_pool_client.distribute_reward(
+                    &env.current_contract_address(),
+                    &learner,
+                    &boost_delta,
+                );
+            }
 
             submission.status = SubmissionStatus::Approved;
             quest.has_approved_submission = true;
-            quest.consumed_amount += fee + learner_amount;
+            // consumed_amount tracks what was drawn from the quest escrow.
+            quest.consumed_amount += quest.reward_amount;
         } else {
             // 5. If approve == false:
             // a. Update submission status to Rejected.
