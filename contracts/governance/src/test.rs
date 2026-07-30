@@ -418,3 +418,81 @@ fn test_upgrade_contract_not_initialized_panics() {
     let new_wasm_hash = BytesN::from_array(&env, &[0xabu8; 32]);
     governance_client.upgrade_contract(&attacker, &new_wasm_hash);
 }
+
+// ── create_proposal Tests ────────────────────────────────────────────────────
+
+#[test]
+fn test_create_proposal_success() {
+    let (env, governance_client, badge_client, admin) = setup();
+    let proposer = Address::generate(&env);
+    let meta_hash = dummy_hash(&env);
+    let end_time = 2_000u64;
+
+    governance_client.initialize(&admin, &badge_client.address);
+
+    let proposal_id = governance_client.create_proposal(&proposer, &meta_hash, &end_time);
+    assert_eq!(proposal_id, 1);
+
+    let proposal = governance_client.get_proposal(&proposal_id);
+    assert_eq!(proposal.id, 1);
+    assert_eq!(proposal.proposer, proposer);
+    assert_eq!(proposal.metadata_hash, meta_hash);
+    assert_eq!(proposal.votes_for, 0);
+    assert_eq!(proposal.votes_against, 0);
+    assert_eq!(proposal.end_time, end_time);
+    assert!(!proposal.executed);
+}
+
+#[test]
+fn test_create_proposal_increments_id() {
+    let (env, governance_client, badge_client, admin) = setup();
+    let proposer = Address::generate(&env);
+    let meta_hash = dummy_hash(&env);
+
+    governance_client.initialize(&admin, &badge_client.address);
+
+    let id1 = governance_client.create_proposal(&proposer, &meta_hash, &1_000u64);
+    let id2 = governance_client.create_proposal(&proposer, &meta_hash, &2_000u64);
+    let id3 = governance_client.create_proposal(&proposer, &meta_hash, &3_000u64);
+
+    assert_eq!(id1, 1);
+    assert_eq!(id2, 2);
+    assert_eq!(id3, 3);
+}
+
+#[test]
+fn test_created_proposal_is_voteable_and_executable() {
+    let (env, governance_client, badge_client, admin) = setup();
+    let badge_admin = Address::generate(&env);
+    let proposer = Address::generate(&env);
+    let voter = Address::generate(&env);
+    let meta_hash = dummy_hash(&env);
+    let end_time = 1_000u64;
+
+    governance_client.initialize(&admin, &badge_client.address);
+    badge_client.initialize(&badge_admin);
+
+    let proposal_id = governance_client.create_proposal(&proposer, &meta_hash, &end_time);
+
+    badge_client.mint_badge(&badge_admin, &voter, &101);
+    governance_client.cast_vote(&voter, &proposal_id, &true);
+
+    env.ledger().with_mut(|li| li.timestamp = 1_001);
+    governance_client.execute_proposal(&proposal_id);
+
+    let proposal = governance_client.get_proposal(&proposal_id);
+    assert!(proposal.executed);
+    assert_eq!(proposal.votes_for, 1);
+}
+
+#[test]
+fn test_create_proposal_emits_event() {
+    let (env, governance_client, badge_client, admin) = setup();
+    let proposer = Address::generate(&env);
+    let meta_hash = dummy_hash(&env);
+
+    governance_client.initialize(&admin, &badge_client.address);
+
+    governance_client.create_proposal(&proposer, &meta_hash, &1_000u64);
+    assert_eq!(env.events().all().len(), 1);
+}

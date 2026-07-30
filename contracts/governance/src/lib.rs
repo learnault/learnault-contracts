@@ -26,6 +26,14 @@ pub trait BadgeNFTInterface {
 pub struct Governance;
 
 #[contractevent]
+pub struct ProposalCreated {
+    #[topic]
+    pub proposal_id: u32,
+    #[topic]
+    pub proposer: Address,
+}
+
+#[contractevent]
 pub struct ProposalExecuted {
     #[topic]
     pub proposal_id: u32,
@@ -59,6 +67,48 @@ impl Governance {
         env.storage()
             .instance()
             .set(&BADGE_NFT_KEY, &badge_contract_address);
+    }
+
+    /// Creates a new governance proposal on-chain.
+    pub fn create_proposal(
+        env: Env,
+        proposer: Address,
+        metadata_hash: BytesN<32>,
+        end_time: u64,
+    ) -> u32 {
+        proposer.require_auth();
+
+        let current_count: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ProposalCount)
+            .unwrap_or(0);
+        let proposal_id = current_count + 1;
+        env.storage()
+            .instance()
+            .set(&DataKey::ProposalCount, &proposal_id);
+
+        let proposal = Proposal {
+            id: proposal_id,
+            proposer: proposer.clone(),
+            metadata_hash,
+            votes_for: 0,
+            votes_against: 0,
+            end_time,
+            executed: false,
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Proposal(proposal_id), &proposal);
+
+        ProposalCreated {
+            proposal_id,
+            proposer,
+        }
+        .publish(&env);
+
+        proposal_id
     }
 
     /// Returns the proposal stored for the given proposal ID.

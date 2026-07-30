@@ -26,6 +26,7 @@ pub struct CourseCreated {
     #[topic]
     pub instructor: Address,
     pub total_modules: u32,
+    pub reward_amount: i128,
 }
 
 #[contractevent]
@@ -42,6 +43,14 @@ pub struct OwnershipTransferred {
     #[topic]
     pub previous_instructor: Address,
     pub new_instructor: Address,
+}
+
+#[contractevent]
+pub struct CourseRewardUpdated {
+    #[topic]
+    pub course_id: u32,
+    pub old_reward: i128,
+    pub new_reward: i128,
 }
 
 #[contractevent]
@@ -126,6 +135,7 @@ impl CourseRegistry {
         instructor: Address,
         total_modules: u32,
         metadata_hash: BytesN<32>,
+        reward_amount: i128,
     ) -> u32 {
         admin.require_auth();
 
@@ -140,6 +150,7 @@ impl CourseRegistry {
         );
 
         assert!(total_modules > 0, "total_modules must be greater than 0");
+        assert!(reward_amount >= 0, "reward_amount must be non-negative");
 
         let current_count: u32 = env
             .storage()
@@ -154,6 +165,7 @@ impl CourseRegistry {
             total_modules,
             metadata_hash,
             active: true,
+            reward_amount,
         };
         env.storage()
             .persistent()
@@ -163,6 +175,7 @@ impl CourseRegistry {
             id: new_id,
             instructor,
             total_modules,
+            reward_amount,
         }
         .publish(&env);
 
@@ -254,6 +267,43 @@ impl CourseRegistry {
 
         // 5. Emit the standard event
         CourseStatusChanged { id, active }.publish(&env);
+    }
+
+    /// Updates the completion reward amount for a course. Only callable by the Protocol Admin.
+    pub fn update_course_reward(env: Env, admin: Address, id: u32, new_reward_amount: i128) {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Contract not initialized");
+        assert!(
+            admin == stored_admin,
+            "Unauthorized: Caller is not the protocol admin"
+        );
+
+        assert!(new_reward_amount >= 0, "reward_amount must be non-negative");
+
+        let mut course: Course = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Course(id))
+            .expect("Course not found");
+
+        let old_reward = course.reward_amount;
+        course.reward_amount = new_reward_amount;
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Course(id), &course);
+
+        CourseRewardUpdated {
+            course_id: id,
+            old_reward,
+            new_reward: new_reward_amount,
+        }
+        .publish(&env);
     }
 
     /// Returns true if the learner has completed all modules in the course.
@@ -406,18 +456,20 @@ impl CourseRegistry {
                 .instance()
                 .get::<DataKey, Address>(&DataKey::RewardPoolAddress)
             {
-                let reward_pool = RewardPoolClient::new(&env, &reward_pool_address);
-                let base_reward: i128 = 10_0000000; // 10 USDC (7 decimal places)
-                reward_pool.distribute_reward(
-                    &env.current_contract_address(),
-                    &learner,
-                    &base_reward,
-                );
+                let reward = course.reward_amount;
+                if reward > 0 {
+                    let reward_pool = RewardPoolClient::new(&env, &reward_pool_address);
+                    reward_pool.distribute_reward(
+                        &env.current_contract_address(),
+                        &learner,
+                        &reward,
+                    );
+                }
 
                 CourseCompleted {
                     learner: learner.clone(),
                     course_id: id,
-                    reward_amount: base_reward,
+                    reward_amount: reward,
                 }
                 .publish(&env);
             }

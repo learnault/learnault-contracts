@@ -286,6 +286,59 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "MultiplierTiers"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "map": [
+                                {
+                                  "key": {
+                                    "symbol": "min_stake"
+                                  },
+                                  "val": {
+                                    "i128": "500"
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "multiplier"
+                                  },
+                                  "val": {
+                                    "u32": 200
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "map": [
+                                {
+                                  "key": {
+                                    "symbol": "min_stake"
+                                  },
+                                  "val": {
+                                    "i128": "100"
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "multiplier"
+                                  },
+                                  "val": {
+                                    "u32": 120
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "Token"
                             }
                           ]

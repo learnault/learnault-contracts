@@ -10,7 +10,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-soroban-sdk = "23"
+soroban-sdk = "23.5.3"
 
 [profile.release]
 overflow-checks = true

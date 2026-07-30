@@ -2,11 +2,11 @@
 
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
-    token, Address, Env,
+    token, Address, Env, Vec,
 };
 
 use crate::{
-    types::{DataKey, StakeInfo},
+    types::{DataKey, MultiplierTier, StakeInfo},
     StakeVault, StakeVaultClient,
 };
 
@@ -204,4 +204,151 @@ fn test_get_multiplier() {
         );
     });
     assert_eq!(client.get_multiplier(&user), 200);
+}
+
+#[test]
+fn test_set_multiplier_tiers_success() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+    let user = Address::generate(&env);
+
+    client.initialize(&admin, &token_id.address());
+
+    let new_tiers = Vec::from_array(
+        &env,
+        [
+            MultiplierTier {
+                min_stake: 1000,
+                multiplier: 300,
+            },
+            MultiplierTier {
+                min_stake: 200,
+                multiplier: 150,
+            },
+        ],
+    );
+
+    client.set_multiplier_tiers(&admin, &new_tiers);
+    assert_eq!(client.get_multiplier_tiers(), new_tiers);
+
+    env.as_contract(&client.address, || {
+        env.storage().persistent().set(
+            &DataKey::UserStake(user.clone()),
+            &StakeInfo {
+                amount: 150,
+                lock_timestamp: 0,
+            },
+        );
+    });
+    assert_eq!(client.get_multiplier(&user), 100);
+
+    env.as_contract(&client.address, || {
+        env.storage().persistent().set(
+            &DataKey::UserStake(user.clone()),
+            &StakeInfo {
+                amount: 200,
+                lock_timestamp: 0,
+            },
+        );
+    });
+    assert_eq!(client.get_multiplier(&user), 150);
+
+    env.as_contract(&client.address, || {
+        env.storage().persistent().set(
+            &DataKey::UserStake(user.clone()),
+            &StakeInfo {
+                amount: 1000,
+                lock_timestamp: 0,
+            },
+        );
+    });
+    assert_eq!(client.get_multiplier(&user), 300);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_set_multiplier_tiers_unauthorized() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+
+    let new_tiers = Vec::from_array(
+        &env,
+        [MultiplierTier {
+            min_stake: 500,
+            multiplier: 200,
+        }],
+    );
+
+    client.set_multiplier_tiers(&non_admin, &new_tiers);
+}
+
+#[test]
+#[should_panic(expected = "Tier min_stake must be strictly descending")]
+fn test_set_multiplier_tiers_invalid_order() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+
+    let invalid_tiers = Vec::from_array(
+        &env,
+        [
+            MultiplierTier {
+                min_stake: 100,
+                multiplier: 120,
+            },
+            MultiplierTier {
+                min_stake: 500,
+                multiplier: 200,
+            },
+        ],
+    );
+
+    client.set_multiplier_tiers(&admin, &invalid_tiers);
+}
+
+#[test]
+#[should_panic(expected = "Tier min_stake must be positive")]
+fn test_set_multiplier_tiers_invalid_min_stake() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+
+    let invalid_tiers = Vec::from_array(
+        &env,
+        [MultiplierTier {
+            min_stake: 0,
+            multiplier: 150,
+        }],
+    );
+
+    client.set_multiplier_tiers(&admin, &invalid_tiers);
+}
+
+#[test]
+#[should_panic(expected = "Tier multiplier must be non-zero")]
+fn test_set_multiplier_tiers_invalid_multiplier() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+
+    let invalid_tiers = Vec::from_array(
+        &env,
+        [MultiplierTier {
+            min_stake: 500,
+            multiplier: 0,
+        }],
+    );
+
+    client.set_multiplier_tiers(&admin, &invalid_tiers);
 }
