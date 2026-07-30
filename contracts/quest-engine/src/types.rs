@@ -43,5 +43,5 @@ pub enum DataKey {
     RewardPool,
     IsPaused,
     StakeVault,
-    Verified(Address, u32), 
+    Verified(Address, u32),
 }

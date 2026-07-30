@@ -152,12 +152,7 @@ fn setup_with_multiplier(
     (env, client, token_id, reward_pool_id)
 }
 
-fn setup_with_boosted_multiplier() -> (
-    Env,
-    QuestEngineContractClient<'static>,
-    Address,
-    Address,
-) {
+fn setup_with_boosted_multiplier() -> (Env, QuestEngineContractClient<'static>, Address, Address) {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -675,10 +670,7 @@ fn test_review_submission_with_no_multiplier() {
     let fee = (reward_amount * 15) / 100;
     let base_amount = reward_amount - fee;
 
-    assert_eq!(
-        token_balance(&env, &token_id, &learner),
-        base_amount
-    );
+    assert_eq!(token_balance(&env, &token_id, &learner), base_amount);
     assert_eq!(token_balance(&env, &token_id, &reward_pool), fee);
 }
 
@@ -868,7 +860,10 @@ fn test_review_submission_with_80_multiplier() {
     let expected = (base * 80) / 100; // 80% of base (penalty)
 
     assert_eq!(token_balance(&env, &token_id, &learner), expected);
-    assert_eq!(token_balance(&env, &token_id, &reward_pool), fee + (base - expected));
+    assert_eq!(
+        token_balance(&env, &token_id, &reward_pool),
+        fee + (base - expected)
+    );
 }
 
 // ── batch_review_submissions Tests ──────────────────────────────────────────

@@ -342,7 +342,11 @@ impl QuestEngineContract {
 
             if multiplier >= 100 {
                 // For multipliers >= 100, pay base from escrow
-                token_client.transfer(&env.current_contract_address(), &learner, &base_learner_amount);
+                token_client.transfer(
+                    &env.current_contract_address(),
+                    &learner,
+                    &base_learner_amount,
+                );
 
                 // If boosted > base, get the difference from reward pool
                 if final_learner_amount > base_learner_amount {
@@ -358,7 +362,11 @@ impl QuestEngineContract {
                 // For multipliers < 100 (penalty), pay reduced amount from escrow
                 // Penalty goes to reward pool
                 let penalty = base_learner_amount - final_learner_amount;
-                token_client.transfer(&env.current_contract_address(), &learner, &final_learner_amount);
+                token_client.transfer(
+                    &env.current_contract_address(),
+                    &learner,
+                    &final_learner_amount,
+                );
                 token_client.transfer(&env.current_contract_address(), &reward_pool, &penalty);
             }
 
@@ -409,17 +417,13 @@ impl QuestEngineContract {
 
         // Only refund the actual remaining balance
         let refund_amount = contract_balance;
-        
+
         quest.active = false;
         env.storage()
             .persistent()
             .set(&DataKey::Quest(quest_id), &quest);
 
-        token_client.transfer(
-            &env.current_contract_address(),
-            &employer,
-            &refund_amount,
-        );
+        token_client.transfer(&env.current_contract_address(), &employer, &refund_amount);
 
         QuestRefunded {
             employer,
@@ -572,9 +576,7 @@ impl QuestEngineContract {
         }
 
         // Mark learner as verified
-        env.storage()
-            .persistent()
-            .set(&verified_key, &true);
+        env.storage().persistent().set(&verified_key, &true);
 
         let reward_pool_address: Address = env
             .storage()
