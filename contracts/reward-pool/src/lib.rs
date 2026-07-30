@@ -7,6 +7,7 @@ pub mod types;
 pub trait RewardPoolInterface {
     fn initialize(env: Env, admin: Address, token: Address);
     fn add_approved_spender(env: Env, admin: Address, spender: Address);
+    fn remove_approved_spender(env: Env, admin: Address, spender: Address);
     fn set_pause(env: Env, admin: Address, status: bool);
     fn distribute_reward(env: Env, caller: Address, learner: Address, amount: i128);
     fn fund_pool(env: Env, donor: Address, amount: i128);
@@ -24,6 +25,12 @@ pub struct PoolInitialized {
 
 #[contractevent]
 pub struct SpenderAdded {
+    #[topic]
+    pub spender: Address,
+}
+
+#[contractevent]
+pub struct SpenderRemoved {
     #[topic]
     pub spender: Address,
 }
@@ -67,7 +74,7 @@ mod contract_impl {
     use crate::types::DataKey;
     use crate::{
         ContractUpgraded, EmergencySweep, PoolFunded, PoolInitialized, RewardDistributed,
-        SpenderAdded,
+        SpenderAdded, SpenderRemoved,
     };
 
     #[contract]
@@ -136,6 +143,36 @@ mod contract_impl {
 
             // 5. Emit SpenderAdded event
             SpenderAdded { spender }.publish(&env);
+        }
+
+        /// Removes a contract address from the approved spender whitelist.
+        ///
+        /// # Arguments
+        /// * `admin` - The admin address (must match stored admin)
+        /// * `spender` - The contract address to remove from the whitelist
+        ///
+        /// # Panics
+        /// * If contract is not initialized
+        /// * If admin does not match stored admin
+        /// * If admin authentication fails
+        pub fn remove_approved_spender(env: Env, admin: Address, spender: Address) {
+            let stored_admin: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::Admin)
+                .expect("Not initialized");
+
+            if admin != stored_admin {
+                panic!("Unauthorized");
+            }
+
+            admin.require_auth();
+
+            env.storage()
+                .persistent()
+                .set(&DataKey::Spender(spender.clone()), &false);
+
+            SpenderRemoved { spender }.publish(&env);
         }
 
         /// Toggles the pause state of the contract (emergency circuit breaker).

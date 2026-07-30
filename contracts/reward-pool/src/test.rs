@@ -258,6 +258,85 @@ fn test_distribute_reward_unauthorized_spender() {
 }
 
 #[test]
+#[should_panic(expected = "Caller is not an authorized spender")]
+fn test_distribute_reward_revoked_spender() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let spender = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+    client.add_approved_spender(&admin, &spender);
+    client.remove_approved_spender(&admin, &spender);
+
+    client.distribute_reward(&spender, &learner, &100);
+}
+
+#[test]
+fn test_revoking_spender_does_not_affect_other_approved_spender() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let spender_a = Address::generate(&env);
+    let spender_b = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+    client.add_approved_spender(&admin, &spender_a);
+    client.add_approved_spender(&admin, &spender_b);
+    client.remove_approved_spender(&admin, &spender_a);
+
+    let token_client = token::StellarAssetClient::new(&env, &token_id.address());
+    token_client.mint(&client.address, &100);
+
+    client.distribute_reward(&spender_b, &learner, &100);
+
+    assert_eq!(token_client.balance(&learner), 100);
+}
+
+#[test]
+fn test_remove_approved_spender_wrong_admin_preserves_approval() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let wrong_admin = Address::generate(&env);
+    let spender = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+    client.add_approved_spender(&admin, &spender);
+
+    let result = client.try_remove_approved_spender(&wrong_admin, &spender);
+    assert!(result.is_err());
+
+    let token_client = token::StellarAssetClient::new(&env, &token_id.address());
+    token_client.mint(&client.address, &100);
+
+    client.distribute_reward(&spender, &learner, &100);
+
+    assert_eq!(token_client.balance(&learner), 100);
+}
+
+#[test]
+#[should_panic(expected = "Caller is not an authorized spender")]
+fn test_remove_approved_spender_repeated_revocation() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let spender = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+
+    client.initialize(&admin, &token_id.address());
+    client.add_approved_spender(&admin, &spender);
+
+    client.remove_approved_spender(&admin, &spender);
+    client.remove_approved_spender(&admin, &spender);
+
+    client.distribute_reward(&spender, &learner, &100);
+}
+
+#[test]
 #[should_panic(expected = "Not initialized")]
 fn test_distribute_reward_not_initialized() {
     let (env, client) = setup();

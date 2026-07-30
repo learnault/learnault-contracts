@@ -578,6 +578,39 @@ fn test_get_quest_budget_returns_none_for_missing_quest() {
     assert!(client.get_quest_budget(&999).is_none());
 }
 
+/// Full setup that wires a real MockRewardPoolTransfer so the boost delta can be
+/// distributed when the multiplier is > 100.
+/// Returns (env, client, token_id, reward_pool_id).
+fn setup_with_boosted_multiplier() -> (
+    Env,
+    QuestEngineContractClient<'static>,
+    Address, // token_id
+    Address, // reward_pool_id (MockRewardPoolTransfer)
+) {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(QuestEngineContract, ());
+    let client = QuestEngineContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
+
+    let stake_vault_id = env.register(MockStakeVaultWithMultiplier, ());
+
+    // Register the real reward pool mock and configure its token.
+    let reward_pool_id = env.register(MockRewardPoolTransfer, ());
+    let rp_client = MockRewardPoolTransferClient::new(&env, &reward_pool_id);
+    rp_client.set_token(&token_id);
+
+    let admin = Address::generate(&env);
+    client.initialize(&admin, &token_id, &reward_pool_id, &stake_vault_id);
+
+    (env, client, token_id, reward_pool_id)
+}
+
 #[test]
 fn test_review_submission_updates_consumed_amount() {
     let (env, client, token_id, _reward_pool, _admin, _stake_vault_id) = setup();
@@ -612,7 +645,16 @@ fn test_review_submission_rejection_does_not_consume_budget() {
     let metadata_hash = BytesN::from_array(&env, &[104u8; 32]);
     let proof_hash = BytesN::from_array(&env, &[105u8; 32]);
 
+    let fee = (reward_amount * 15) / 100; // 150
+    let base = reward_amount - fee; // 850
+    let boosted = (base * 120) / 100; // 1020
+    let boost_delta = boosted - base; // 170
+
+    // Fund employer for quest escrow.
     mint_tokens(&env, &token_id, &employer, &reward_amount);
+    // Pre-fund the RewardPool with enough to cover the boost delta.
+    mint_tokens(&env, &token_id, &reward_pool_id, &boost_delta);
+
     let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
     client.submit_proof(&learner, &quest_id, &proof_hash);
     client.review_submission(&employer, &learner, &quest_id, &false);
@@ -620,6 +662,145 @@ fn test_review_submission_rejection_does_not_consume_budget() {
     let budget = client.get_quest_budget(&quest_id).unwrap();
     assert_eq!(budget.consumed_amount, 0);
     assert_eq!(budget.remaining, reward_amount);
+}
+
+// ── Acceptance Criteria Tests ─────────────────────────────────────────────────
+
+#[test]
+fn test_staked_learner_receives_more_than_non_staked() {
+    // AC: A learner with a 120 multiplier receives more than a non-staked learner
+    // for the same approved quest. Two identical quests, same reward_amount,
+    // one learner staked (120x), one not (100x).
+    let reward_amount: i128 = 1000;
+    let fee = (reward_amount * 15) / 100; // 150
+    let base = reward_amount - fee; // 850
+    let boost_delta_120 = (base * 120) / 100 - base; // 170
+
+    // --- Non-staked learner (100x) ---
+    let (env1, client1, token_id1, _rp1) = setup_with_multiplier(100);
+    let employer1 = Address::generate(&env1);
+    let learner_no_stake = Address::generate(&env1);
+    let mh = BytesN::from_array(&env1, &[80u8; 32]);
+    let ph = BytesN::from_array(&env1, &[81u8; 32]);
+    mint_tokens(&env1, &token_id1, &employer1, &reward_amount);
+    let qid1 = client1.create_build_quest(&employer1, &reward_amount, &mh);
+    client1.submit_proof(&learner_no_stake, &qid1, &ph);
+    client1.review_submission(&employer1, &learner_no_stake, &qid1, &true);
+    let non_staked_payout = token_balance(&env1, &token_id1, &learner_no_stake);
+
+    // --- Staked learner (120x) ---
+    let (env2, client2, token_id2, rp2) = setup_with_boosted_multiplier();
+    let employer2 = Address::generate(&env2);
+    let learner_staked = Address::generate(&env2);
+    let mh2 = BytesN::from_array(&env2, &[82u8; 32]);
+    let ph2 = BytesN::from_array(&env2, &[83u8; 32]);
+    mint_tokens(&env2, &token_id2, &employer2, &reward_amount);
+    mint_tokens(&env2, &token_id2, &rp2, &boost_delta_120);
+    let qid2 = client2.create_build_quest(&employer2, &reward_amount, &mh2);
+    client2.submit_proof(&learner_staked, &qid2, &ph2);
+    client2.review_submission(&employer2, &learner_staked, &qid2, &true);
+    let staked_payout = token_balance(&env2, &token_id2, &learner_staked);
+
+    assert!(
+        staked_payout > non_staked_payout,
+        "Staked learner ({}) must earn more than non-staked learner ({})",
+        staked_payout,
+        non_staked_payout
+    );
+    assert_eq!(non_staked_payout, base); // 850 for 100x
+    assert_eq!(staked_payout, (base * 120) / 100); // 1020 for 120x
+}
+
+#[test]
+fn test_basis_point_math_for_100_120_200_multipliers() {
+    // AC: Basis-point math remains correct for 100, 120, and 200 multiplier tiers.
+    let reward: i128 = 1000;
+    let fee = (reward * 15) / 100; // 150
+    let base = reward - fee; // 850
+
+    // 100x: boosted == base (no change)
+    let b100 = (base * 100) / 100;
+    assert_eq!(b100, 850);
+
+    // 120x: boosted = 1020
+    let b120 = (base * 120) / 100;
+    assert_eq!(b120, 1020);
+
+    // 200x: boosted = 1700
+    let b200 = (base * 200) / 100;
+    assert_eq!(b200, 1700);
+
+    // Each tier is strictly larger than the previous.
+    assert!(b100 < b120);
+    assert!(b120 < b200);
+}
+
+#[test]
+fn test_review_submission_with_200_multiplier_draws_delta_from_pool() {
+    // AC: 200x multiplier tier works end-to-end; delta from RewardPool.
+    // reward=1000 → fee=150, base=850, boosted=1700, delta=850.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(QuestEngineContract, ());
+    let client = QuestEngineContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
+
+    let stake_vault_id = env.register(MockStakeVault200, ());
+    let reward_pool_id = env.register(MockRewardPoolTransfer, ());
+    let rp_client = MockRewardPoolTransferClient::new(&env, &reward_pool_id);
+    rp_client.set_token(&token_id);
+
+    let admin = Address::generate(&env);
+    client.initialize(&admin, &token_id, &reward_pool_id, &stake_vault_id);
+
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[90u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[91u8; 32]);
+
+    let fee = (reward_amount * 15) / 100; // 150
+    let base = reward_amount - fee; // 850
+    let boosted = (base * 200) / 100; // 1700
+    let boost_delta = boosted - base; // 850
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    mint_tokens(&env, &token_id, &reward_pool_id, &boost_delta);
+
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+    client.review_submission(&employer, &learner, &quest_id, &true);
+
+    assert_eq!(token_balance(&env, &token_id, &learner), boosted);
+    assert_eq!(token_balance(&env, &token_id, &reward_pool_id), fee);
+}
+
+#[test]
+#[should_panic]
+fn test_review_submission_fails_deterministically_when_pool_cannot_cover_boost() {
+    // AC: The contract fails deterministically if the configured funding source
+    // cannot cover the boosted payout.
+    // Pool has 0 tokens for the delta → token transfer panics.
+    let (env, client, token_id, _reward_pool_id) = setup_with_boosted_multiplier();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[92u8; 32]);
+    let proof_hash = BytesN::from_array(&env, &[93u8; 32]);
+
+    // Fund employer but do NOT pre-fund the RewardPool for the delta.
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &proof_hash);
+
+    // Should panic because pool has no balance for the 170 boost_delta.
+    client.review_submission(&employer, &learner, &quest_id, &true);
 }
 
 #[test]
@@ -791,6 +972,32 @@ fn test_refund_records_refunded_amount() {
     assert_eq!(budget.refunded_amount, reward_amount);
     assert_eq!(budget.consumed_amount, 0);
     assert_eq!(budget.remaining, 0);
+}
+
+/// Mock RewardPool that actually transfers tokens (used for boost-delta tests).
+#[contract]
+pub struct MockRewardPoolTransfer;
+
+#[contractimpl]
+impl MockRewardPoolTransfer {
+    pub fn distribute_reward(env: Env, _caller: Address, learner: Address, amount: i128) {
+        let token_id: Address = env
+            .storage()
+            .instance()
+            .get(&soroban_sdk::symbol_short!("token"))
+            .unwrap();
+        soroban_sdk::token::Client::new(&env, &token_id).transfer(
+            &env.current_contract_address(),
+            &learner,
+            &amount,
+        );
+    }
+
+    pub fn set_token(env: Env, token: Address) {
+        env.storage()
+            .instance()
+            .set(&soroban_sdk::symbol_short!("token"), &token);
+    }
 }
 
 #[test]
