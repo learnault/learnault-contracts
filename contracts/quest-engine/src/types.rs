@@ -44,4 +44,5 @@ pub enum DataKey {
     IsPaused,
     StakeVault,
     Verified(Address, u32),
+    Multiplier(Address),
 }

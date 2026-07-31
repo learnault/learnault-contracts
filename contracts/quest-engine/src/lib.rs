@@ -87,6 +87,81 @@ pub struct QuestEngineContract;
 
 #[contractimpl]
 impl QuestEngineContract {
+    /// Internal helper that processes a single submission approval with full payout logic
+    fn process_submission_approval(
+        env: &Env,
+        quest: &Quest,
+        learner: Address,
+        quest_id: u32,
+        submission_key: DataKey,
+        token_client: &token::Client,
+        reward_pool: &Address,
+    ) {
+        let fee = (quest.reward_amount * 15) / 100;
+        let base_learner_amount = quest.reward_amount - fee;
+
+        // Fetch stake vault and get multiplier
+        let stake_vault_address: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::StakeVault)
+            .expect("Not initialized");
+        let stake_vault_client = StakeVaultClient::new(env, &stake_vault_address);
+        let multiplier = stake_vault_client.get_multiplier(&learner);
+
+        // Calculate amount based on multiplier (basis points)
+        let final_learner_amount = (base_learner_amount * multiplier as i128) / 100;
+
+        // Transfer fee to reward pool
+        token_client.transfer(&env.current_contract_address(), reward_pool, &fee);
+
+        if multiplier >= 100 {
+            // For multipliers >= 100, pay base from escrow
+            token_client.transfer(
+                &env.current_contract_address(),
+                &learner,
+                &base_learner_amount,
+            );
+
+            // If boosted > base, get the difference from reward pool
+            if final_learner_amount > base_learner_amount {
+                let boost_delta = final_learner_amount - base_learner_amount;
+                let reward_pool_client = RewardPoolClient::new(env, reward_pool);
+                reward_pool_client.distribute_reward(
+                    &env.current_contract_address(),
+                    &learner,
+                    &boost_delta,
+                );
+            }
+        } else {
+            // For multipliers < 100 (penalty), pay reduced amount from escrow
+            // Penalty goes to reward pool
+            let penalty = base_learner_amount - final_learner_amount;
+            token_client.transfer(
+                &env.current_contract_address(),
+                &learner,
+                &final_learner_amount,
+            );
+            token_client.transfer(&env.current_contract_address(), reward_pool, &penalty);
+        }
+
+        let mut submission: Submission = env
+            .storage()
+            .persistent()
+            .get(&submission_key)
+            .expect("Submission not found");
+        submission.status = SubmissionStatus::Approved;
+        env.storage().persistent().set(&submission_key, &submission);
+
+        SubmissionReviewed {
+            employer: quest.employer.clone(),
+            learner,
+            quest_id,
+            approved: true,
+        }
+        .publish(env);
+    }
+
     /// Initializes the QuestEngine contract with the token address and admin.
     pub fn initialize(
         env: Env,
@@ -299,7 +374,7 @@ impl QuestEngineContract {
         }
 
         let submission_key = DataKey::Submission(learner.clone(), quest_id);
-        let mut submission: Submission = env
+        let submission: Submission = env
             .storage()
             .persistent()
             .get(&submission_key)
@@ -322,68 +397,32 @@ impl QuestEngineContract {
             .expect("Not initialized");
 
         if approve {
-            let fee = (quest.reward_amount * 15) / 100;
-            let base_learner_amount = quest.reward_amount - fee;
-
-            // Fetch stake vault and get multiplier
-            let stake_vault_address: Address = env
-                .storage()
-                .instance()
-                .get(&DataKey::StakeVault)
-                .expect("Not initialized");
-            let stake_vault_client = StakeVaultClient::new(&env, &stake_vault_address);
-            let multiplier = stake_vault_client.get_multiplier(&learner);
-
-            // Calculate amount based on multiplier (basis points)
-            let final_learner_amount = (base_learner_amount * multiplier as i128) / 100;
-
-            // Transfer fee to reward pool
-            token_client.transfer(&env.current_contract_address(), &reward_pool, &fee);
-
-            if multiplier >= 100 {
-                // For multipliers >= 100, pay base from escrow
-                token_client.transfer(
-                    &env.current_contract_address(),
-                    &learner,
-                    &base_learner_amount,
-                );
-
-                // If boosted > base, get the difference from reward pool
-                if final_learner_amount > base_learner_amount {
-                    let boost_delta = final_learner_amount - base_learner_amount;
-                    let reward_pool_client = RewardPoolClient::new(&env, &reward_pool);
-                    reward_pool_client.distribute_reward(
-                        &env.current_contract_address(),
-                        &learner,
-                        &boost_delta,
-                    );
-                }
-            } else {
-                // For multipliers < 100 (penalty), pay reduced amount from escrow
-                // Penalty goes to reward pool
-                let penalty = base_learner_amount - final_learner_amount;
-                token_client.transfer(
-                    &env.current_contract_address(),
-                    &learner,
-                    &final_learner_amount,
-                );
-                token_client.transfer(&env.current_contract_address(), &reward_pool, &penalty);
-            }
-
-            submission.status = SubmissionStatus::Approved;
+            Self::process_submission_approval(
+                &env,
+                &quest,
+                learner.clone(),
+                quest_id,
+                submission_key.clone(),
+                &token_client,
+                &reward_pool,
+            );
         } else {
+            let mut submission: Submission = env
+                .storage()
+                .persistent()
+                .get(&submission_key)
+                .expect("Submission not found");
             submission.status = SubmissionStatus::Rejected;
-        }
+            env.storage().persistent().set(&submission_key, &submission);
 
-        env.storage().persistent().set(&submission_key, &submission);
-
-        SubmissionReviewed {
-            employer,
-            learner,
-            quest_id,
-            approved: approve,
+            SubmissionReviewed {
+                employer,
+                learner,
+                quest_id,
+                approved: false,
+            }
+            .publish(&env);
         }
-        .publish(&env);
     }
 
     pub fn refund_quest(env: Env, employer: Address, quest_id: u32) {
@@ -449,7 +488,7 @@ impl QuestEngineContract {
 
         employer.require_auth();
 
-        let mut quest: Quest = env
+        let quest: Quest = env
             .storage()
             .persistent()
             .get(&DataKey::Quest(quest_id))
@@ -471,21 +510,10 @@ impl QuestEngineContract {
             .get(&DataKey::RewardPool)
             .expect("Not initialized");
 
-        let fee = (quest.reward_amount * 15) / 100;
-        let learner_amount = quest.reward_amount - fee;
-        let total_payout = learner_amount * (learners.len() as i128);
-        let total_fee = fee * (learners.len() as i128);
-
-        // Check if contract has enough balance
-        let contract_balance = token_client.balance(&env.current_contract_address());
-        if contract_balance < total_payout + total_fee {
-            panic!("Insufficient quest budget");
-        }
-
         let mut approved_count: u32 = 0;
         for learner in learners.iter() {
             let submission_key = DataKey::Submission(learner.clone(), quest_id);
-            let mut submission: Submission = env
+            let submission: Submission = env
                 .storage()
                 .persistent()
                 .get(&submission_key)
@@ -495,24 +523,22 @@ impl QuestEngineContract {
                 panic!("Submission is not pending review");
             }
 
-            token_client.transfer(&env.current_contract_address(), &reward_pool, &fee);
-            token_client.transfer(&env.current_contract_address(), &learner, &learner_amount);
-
-            submission.status = SubmissionStatus::Approved;
-            env.storage().persistent().set(&submission_key, &submission);
-
-            SubmissionReviewed {
-                employer: employer.clone(),
-                learner,
+            // Use the same core approval logic as single review
+            Self::process_submission_approval(
+                &env,
+                &quest,
+                learner.clone(),
                 quest_id,
-                approved: true,
-            }
-            .publish(&env);
+                submission_key,
+                &token_client,
+                &reward_pool,
+            );
 
             approved_count += 1;
         }
 
         // Mark quest inactive after all approvals
+        let mut quest = quest;
         quest.active = false;
         env.storage()
             .persistent()
