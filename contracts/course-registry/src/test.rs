@@ -853,7 +853,7 @@ fn test_complete_module_emits_event() {
 
     // Enroll first
     client.enroll(&learner, &course_id);
-    
+
     let initial_events = env.events().all().len();
     client.complete_module(&admin, &learner, &course_id);
 
