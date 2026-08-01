@@ -407,11 +407,14 @@ fn test_multiple_courses_with_different_policies() {
     client.enroll(&learner, &course1);
     client.complete_module(&admin, &learner, &course1);
     assert!(client.is_course_finished(&learner, &course1));
+    // Check balance after course1 (should be 0)
+    assert_eq!(token_sac.balance(&learner), 0);
 
     // Course2 should complete with reward
     client.enroll(&learner, &course2);
     client.complete_module(&admin, &learner, &course2);
     assert!(client.is_course_finished(&learner, &course2));
+    // Should only be 20_0000000, not accumulated
     assert_eq!(token_sac.balance(&learner), 20_0000000);
 }
 
@@ -842,15 +845,19 @@ fn test_complete_module_emits_event() {
     let course_id = client.create_course(
         &admin,
         &instructor,
-        &3,
+        &1, // Change to 1 module so completion triggers all events
         &dummy_hash(&env),
         &10_0000000,
-        &None,
+        &Some(crate::CompletionPolicy::Optional), // Add policy
     );
 
+    // Enroll first
+    client.enroll(&learner, &course_id);
+    
     let initial_events = env.events().all().len();
     client.complete_module(&admin, &learner, &course_id);
 
+    // Should emit at least ModuleCompleted event
     assert!(env.events().all().len() > initial_events);
 }
 
@@ -1090,13 +1097,17 @@ fn test_reward_not_distributed_without_whitelist() {
         &1,
         &dummy_hash(&env),
         &10_0000000,
-        &Some(crate::CompletionPolicy::Optional),
+        &Some(crate::CompletionPolicy::RewardRequired), // Change to RewardRequired
     );
 
     let (reward_pool_client, token_sac, _) = setup_reward_pool(&env, &admin);
     token_sac.mint(&reward_pool_client.address, &1_000_000_000);
 
+    // Set reward pool address WITHOUT whitelisting
     client.set_reward_pool_address(&admin, &reward_pool_client.address);
+
+    // This should panic because the reward pool isn't whitelisted
+    client.enroll(&learner, &course_id);
     client.complete_module(&admin, &learner, &course_id);
 }
 
