@@ -22,14 +22,7 @@ pub enum CompletionPolicy {
     BadgeRequired,
     /// Both reward pool and badge NFT required for course completion
     BothRequired,
-}
-
-impl Default for CompletionPolicy {
-    fn default() -> Self {
-        // Safe default: optional for backward compatibility
-        Self::Optional
-    }
-}
+} 
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
