@@ -8,6 +8,27 @@ pub struct Course {
     pub metadata_hash: BytesN<32>,
     pub active: bool,
     pub reward_amount: i128,
+    pub completion_policy: CompletionPolicy,  // <-- This line was missing
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CompletionPolicy {
+    /// No integrations required - all side effects silently skipped if addresses missing
+    Optional,
+    /// Reward pool required for course completion
+    RewardRequired,
+    /// Badge NFT required for course completion
+    BadgeRequired,
+    /// Both reward pool and badge NFT required for course completion
+    BothRequired,
+}
+
+impl Default for CompletionPolicy {
+    fn default() -> Self {
+        // Safe default: optional for backward compatibility
+        Self::Optional
+    }
 }
 
 #[contracttype]
@@ -19,4 +40,5 @@ pub enum DataKey {
     Admin,
     BadgeNftAddress,
     RewardPoolAddress,
+    CompletionPolicy(u32),
 }
