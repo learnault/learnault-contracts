@@ -916,13 +916,14 @@ fn test_badge_minted_on_final_module_completion() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
+    // Change to BadgeRequired policy
     let course_id = client.create_course(
         &admin,
         &instructor,
         &2,
         &dummy_hash(&env),
         &10_0000000,
-        &Some(crate::CompletionPolicy::Optional),
+        &Some(crate::CompletionPolicy::BadgeRequired),
     );
 
     let badge_client = setup_badge_nft(&env, &client.address);
@@ -1028,13 +1029,14 @@ fn test_complete_course_triggers_reward_distribution() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
+    // Change to BothRequired policy
     let course_id = client.create_course(
         &admin,
         &instructor,
         &2,
         &dummy_hash(&env),
         &10_0000000,
-        &Some(crate::CompletionPolicy::Optional),
+        &Some(crate::CompletionPolicy::BothRequired),
     );
 
     let (reward_pool_client, token_sac, _) = setup_reward_pool(&env, &admin);
@@ -1064,13 +1066,14 @@ fn test_reward_not_distributed_if_reward_pool_not_set() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
+    // Change to BadgeRequired policy
     let course_id = client.create_course(
         &admin,
         &instructor,
         &1,
         &dummy_hash(&env),
         &10_0000000,
-        &Some(crate::CompletionPolicy::Optional),
+        &Some(crate::CompletionPolicy::BadgeRequired),
     );
 
     let badge_client = setup_badge_nft(&env, &client.address);
@@ -1183,13 +1186,14 @@ fn test_updated_reward_used_on_completion() {
     let learner = Address::generate(&env);
 
     client.initialize(&admin);
+    // Change to RewardRequired policy
     let course_id = client.create_course(
         &admin,
         &instructor,
         &1,
         &dummy_hash(&env),
         &10_0000000,
-        &Some(crate::CompletionPolicy::Optional),
+        &Some(crate::CompletionPolicy::RewardRequired),
     );
 
     let (reward_pool_client, token_sac, _) = setup_reward_pool(&env, &admin);
@@ -1213,13 +1217,14 @@ fn test_different_courses_have_different_rewards() {
     let learner_b = Address::generate(&env);
 
     client.initialize(&admin);
+    // Change to RewardRequired policy
     let course_a = client.create_course(
         &admin,
         &instructor,
         &1,
         &dummy_hash(&env),
         &10_0000000,
-        &Some(crate::CompletionPolicy::Optional),
+        &Some(crate::CompletionPolicy::RewardRequired),
     );
     let course_b = client.create_course(
         &admin,
@@ -1227,7 +1232,7 @@ fn test_different_courses_have_different_rewards() {
         &1,
         &dummy_hash(&env),
         &25_0000000,
-        &Some(crate::CompletionPolicy::Optional),
+        &Some(crate::CompletionPolicy::RewardRequired),
     );
 
     let (reward_pool_client, token_sac, _) = setup_reward_pool(&env, &admin);
