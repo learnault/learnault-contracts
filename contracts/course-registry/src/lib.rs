@@ -296,7 +296,7 @@ impl CourseRegistry {
             env.storage()
                 .instance()
                 .set(&DataKey::RewardPoolAddress, &reward);
-            
+
             IntegrationAddressUpdated {
                 course_id,
                 integration_type: String::from_str(&env, "reward_pool"),
@@ -310,7 +310,7 @@ impl CourseRegistry {
             env.storage()
                 .instance()
                 .set(&DataKey::BadgeNftAddress, &badge);
-            
+
             IntegrationAddressUpdated {
                 course_id,
                 integration_type: String::from_str(&env, "badge_nft"),
@@ -554,14 +554,10 @@ impl CourseRegistry {
         if new_progress == course.total_modules {
             // Enforce completion policy before executing side effects
             Self::enforce_completion_policy(&env, &course);
-            
+
             // Execute side effects
-            let (reward_paid, badge_minted) = Self::execute_completion_side_effects(
-                &env,
-                &course,
-                learner.clone(),
-                id,
-            );
+            let (reward_paid, badge_minted) =
+                Self::execute_completion_side_effects(&env, &course, learner.clone(), id);
 
             CourseCompleted {
                 learner: learner.clone(),
@@ -580,20 +576,40 @@ impl CourseRegistry {
         match course.completion_policy {
             CompletionPolicy::Optional => {}
             CompletionPolicy::RewardRequired => {
-                if env.storage().instance().get::<DataKey, Address>(&DataKey::RewardPoolAddress).is_none() {
+                if env
+                    .storage()
+                    .instance()
+                    .get::<DataKey, Address>(&DataKey::RewardPoolAddress)
+                    .is_none()
+                {
                     panic!("Completion policy violation: Reward pool required but not configured");
                 }
             }
             CompletionPolicy::BadgeRequired => {
-                if env.storage().instance().get::<DataKey, Address>(&DataKey::BadgeNftAddress).is_none() {
+                if env
+                    .storage()
+                    .instance()
+                    .get::<DataKey, Address>(&DataKey::BadgeNftAddress)
+                    .is_none()
+                {
                     panic!("Completion policy violation: Badge NFT required but not configured");
                 }
             }
             CompletionPolicy::BothRequired => {
-                if env.storage().instance().get::<DataKey, Address>(&DataKey::RewardPoolAddress).is_none() {
+                if env
+                    .storage()
+                    .instance()
+                    .get::<DataKey, Address>(&DataKey::RewardPoolAddress)
+                    .is_none()
+                {
                     panic!("Completion policy violation: Reward pool required but not configured");
                 }
-                if env.storage().instance().get::<DataKey, Address>(&DataKey::BadgeNftAddress).is_none() {
+                if env
+                    .storage()
+                    .instance()
+                    .get::<DataKey, Address>(&DataKey::BadgeNftAddress)
+                    .is_none()
+                {
                     panic!("Completion policy violation: Badge NFT required but not configured");
                 }
             }
@@ -663,11 +679,7 @@ impl CourseRegistry {
             .get::<DataKey, Address>(&DataKey::BadgeNftAddress)
         {
             let badge_nft = BadgeNFTClient::new(env, &badge_nft_address);
-            match badge_nft.try_mint_badge(
-                &env.current_contract_address(),
-                &learner,
-                &course_id,
-            ) {
+            match badge_nft.try_mint_badge(&env.current_contract_address(), &learner, &course_id) {
                 Ok(_) => {
                     badge_minted = true;
                 }

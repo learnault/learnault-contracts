@@ -121,11 +121,7 @@ fn test_set_completion_policy_unauthorized() {
     let (_, _, id) = setup_with_course(&env, &client, None);
     let fake_admin = Address::generate(&env);
 
-    client.set_completion_policy(
-        &fake_admin,
-        &id,
-        &crate::CompletionPolicy::RewardRequired,
-    );
+    client.set_completion_policy(&fake_admin, &id, &crate::CompletionPolicy::RewardRequired);
 }
 
 #[test]
@@ -133,11 +129,7 @@ fn test_set_completion_policy_success() {
     let (env, client) = setup();
     let (admin, _, id) = setup_with_course(&env, &client, None);
 
-    client.set_completion_policy(
-        &admin,
-        &id,
-        &crate::CompletionPolicy::BothRequired,
-    );
+    client.set_completion_policy(&admin, &id, &crate::CompletionPolicy::BothRequired);
 
     let policy = client.get_completion_policy(&id);
     assert_eq!(policy, crate::CompletionPolicy::BothRequired);
@@ -148,11 +140,7 @@ fn test_completion_policy_event_emitted() {
     let (env, client) = setup();
     let (admin, _, id) = setup_with_course(&env, &client, None);
 
-    client.set_completion_policy(
-        &admin,
-        &id,
-        &crate::CompletionPolicy::RewardRequired,
-    );
+    client.set_completion_policy(&admin, &id, &crate::CompletionPolicy::RewardRequired);
 
     let events = env.events().all();
     assert!(!events.is_empty());
@@ -456,11 +444,7 @@ fn test_policy_update_affects_future_completions() {
     assert_eq!(client.get_progress(&learner, &course_id), 1);
 
     // Update policy to require reward pool
-    client.set_completion_policy(
-        &admin,
-        &course_id,
-        &crate::CompletionPolicy::RewardRequired,
-    );
+    client.set_completion_policy(&admin, &course_id, &crate::CompletionPolicy::RewardRequired);
 
     // Try to complete final module - should panic
     client.complete_module(&admin, &learner, &course_id);
@@ -590,11 +574,7 @@ fn test_policy_change_after_course_creation() {
     assert_eq!(policy, crate::CompletionPolicy::Optional);
 
     // Change to BothRequired
-    client.set_completion_policy(
-        &admin,
-        &course_id,
-        &crate::CompletionPolicy::BothRequired,
-    );
+    client.set_completion_policy(&admin, &course_id, &crate::CompletionPolicy::BothRequired);
 
     let policy = client.get_completion_policy(&course_id);
     assert_eq!(policy, crate::CompletionPolicy::BothRequired);
@@ -645,7 +625,14 @@ fn test_zero_modules_panics() {
     let instructor = Address::generate(&env);
 
     client.initialize(&admin);
-    client.create_course(&admin, &instructor, &0, &dummy_hash(&env), &10_0000000, &None);
+    client.create_course(
+        &admin,
+        &instructor,
+        &0,
+        &dummy_hash(&env),
+        &10_0000000,
+        &None,
+    );
 }
 
 #[test]
@@ -657,7 +644,14 @@ fn test_unauthorized_admin_panics() {
     let instructor = Address::generate(&env);
 
     client.initialize(&true_admin);
-    client.create_course(&fake_admin, &instructor, &3, &dummy_hash(&env), &10_0000000, &None);
+    client.create_course(
+        &fake_admin,
+        &instructor,
+        &3,
+        &dummy_hash(&env),
+        &10_0000000,
+        &None,
+    );
 }
 
 #[test]
@@ -667,7 +661,14 @@ fn test_course_created_event_emitted() {
     let instructor = Address::generate(&env);
 
     client.initialize(&admin);
-    client.create_course(&admin, &instructor, &4, &dummy_hash(&env), &10_0000000, &None);
+    client.create_course(
+        &admin,
+        &instructor,
+        &4,
+        &dummy_hash(&env),
+        &10_0000000,
+        &None,
+    );
 
     assert_eq!(env.events().all().len(), 1);
 }
@@ -1108,14 +1109,7 @@ fn test_create_course_with_zero_reward() {
     let instructor = Address::generate(&env);
 
     client.initialize(&admin);
-    let course_id = client.create_course(
-        &admin,
-        &instructor,
-        &3,
-        &dummy_hash(&env),
-        &0,
-        &None,
-    );
+    let course_id = client.create_course(&admin, &instructor, &3, &dummy_hash(&env), &0, &None);
 
     let course = client.get_course(&course_id);
     assert_eq!(course.reward_amount, 0);

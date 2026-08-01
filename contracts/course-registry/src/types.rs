@@ -8,7 +8,7 @@ pub struct Course {
     pub metadata_hash: BytesN<32>,
     pub active: bool,
     pub reward_amount: i128,
-    pub completion_policy: CompletionPolicy,  // <-- This line was missing
+    pub completion_policy: CompletionPolicy, // <-- This line was missing
 }
 
 #[contracttype]
