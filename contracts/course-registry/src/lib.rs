@@ -626,88 +626,81 @@ impl CourseRegistry {
         let mut reward_paid = false;
         let mut badge_minted = false;
 
-        // Handle reward payout if configured
-        if let Some(reward_pool_address) = env
-            .storage()
-            .instance()
-            .get::<DataKey, Address>(&DataKey::RewardPoolAddress)
-        {
-            let reward = course.reward_amount;
-            if reward > 0 {
-                let reward_pool = RewardPoolClient::new(env, &reward_pool_address);
-                match reward_pool.try_distribute_reward(
+        // Only process reward if policy is not Optional OR if reward is specifically configured
+        if course.completion_policy != CompletionPolicy::Optional {
+            // Handle reward payout if configured
+            if let Some(reward_pool_address) = env
+                .storage()
+                .instance()
+                .get::<DataKey, Address>(&DataKey::RewardPoolAddress)
+            {
+                let reward = course.reward_amount;
+                if reward > 0 {
+                    let reward_pool = RewardPoolClient::new(env, &reward_pool_address);
+                    match reward_pool.try_distribute_reward(
+                        &env.current_contract_address(),
+                        &learner,
+                        &reward,
+                    ) {
+                        Ok(_) => {
+                            reward_paid = true;
+                        }
+                        Err(_e) => {
+                            // If reward is required by policy, fail the completion
+                            match course.completion_policy {
+                                CompletionPolicy::RewardRequired
+                                | CompletionPolicy::BothRequired => {
+                                    panic!("Reward payout failed but required by policy");
+                                }
+                                _ => {
+                                    // Silently skip for optional policy
+                                    soroban_sdk::log!(
+                                        env,
+                                        "Warning: Reward payout failed for course {}",
+                                        course_id
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Only process badge if policy is not Optional
+        if course.completion_policy != CompletionPolicy::Optional {
+            // Handle badge minting if configured
+            if let Some(badge_nft_address) = env
+                .storage()
+                .instance()
+                .get::<DataKey, Address>(&DataKey::BadgeNftAddress)
+            {
+                let badge_nft = BadgeNFTClient::new(env, &badge_nft_address);
+                match badge_nft.try_mint_badge(
                     &env.current_contract_address(),
                     &learner,
-                    &reward,
+                    &course_id,
                 ) {
                     Ok(_) => {
-                        reward_paid = true;
+                        badge_minted = true;
                     }
                     Err(_e) => {
-                        // If reward is required by policy, fail the completion
+                        // If badge is required by policy, fail the completion
                         match course.completion_policy {
-                            CompletionPolicy::RewardRequired | CompletionPolicy::BothRequired => {
-                                panic!("Reward payout failed but required by policy");
+                            CompletionPolicy::BadgeRequired | CompletionPolicy::BothRequired => {
+                                panic!("Badge minting failed but required by policy");
                             }
                             _ => {
                                 // Silently skip for optional policy
                                 soroban_sdk::log!(
                                     env,
-                                    "Warning: Reward payout failed for course {}",
+                                    "Warning: Badge minting failed for course {}",
                                     course_id
                                 );
                             }
                         }
                     }
                 }
-            }
-        } else {
-            // If no reward pool but policy requires it, this is caught by enforce_completion_policy
-            // For optional policy, silently skip
-            if matches!(
-                course.completion_policy,
-                CompletionPolicy::RewardRequired | CompletionPolicy::BothRequired
-            ) {
-                panic!("Reward pool required but not configured");
-            }
-        }
-
-        // Handle badge minting if configured
-        if let Some(badge_nft_address) = env
-            .storage()
-            .instance()
-            .get::<DataKey, Address>(&DataKey::BadgeNftAddress)
-        {
-            let badge_nft = BadgeNFTClient::new(env, &badge_nft_address);
-            match badge_nft.try_mint_badge(&env.current_contract_address(), &learner, &course_id) {
-                Ok(_) => {
-                    badge_minted = true;
-                }
-                Err(_e) => {
-                    // If badge is required by policy, fail the completion
-                    match course.completion_policy {
-                        CompletionPolicy::BadgeRequired | CompletionPolicy::BothRequired => {
-                            panic!("Badge minting failed but required by policy");
-                        }
-                        _ => {
-                            // Silently skip for optional policy
-                            soroban_sdk::log!(
-                                env,
-                                "Warning: Badge minting failed for course {}",
-                                course_id
-                            );
-                        }
-                    }
-                }
-            }
-        } else {
-            // If no badge NFT but policy requires it, this is caught by enforce_completion_policy
-            // For optional policy, silently skip
-            if matches!(
-                course.completion_policy,
-                CompletionPolicy::BadgeRequired | CompletionPolicy::BothRequired
-            ) {
-                panic!("Badge NFT required but not configured");
             }
         }
 
