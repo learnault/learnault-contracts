@@ -1,7 +1,7 @@
 #![no_std]
 
 pub mod types;
-use types::{DataKey, Quest, QuestBudget, QuestType, Submission, SubmissionStatus};
+use types::{DataKey, Quest, QuestType, Submission, SubmissionStatus};
 
 use soroban_sdk::{
     contract, contractclient, contractevent, contractimpl, token, Address, BytesN, Env, Vec,
@@ -82,27 +82,6 @@ pub struct ExploreQuestVerified {
     pub amount: i128,
 }
 
-#[contractevent]
-pub struct QuestBudgetUpdated {
-    #[topic]
-    pub quest_id: u32,
-    pub total_funded: i128,
-    pub consumed_amount: i128,
-    pub refunded_amount: i128,
-    pub remaining: i128,
-}
-
-fn emit_budget_update(env: &Env, quest_id: u32, quest: &Quest) {
-    QuestBudgetUpdated {
-        quest_id,
-        total_funded: quest.total_funded,
-        consumed_amount: quest.consumed_amount,
-        refunded_amount: quest.refunded_amount,
-        remaining: quest.remaining_budget(),
-    }
-    .publish(env);
-}
-
 #[contract]
 pub struct QuestEngineContract;
 
@@ -132,47 +111,30 @@ impl QuestEngineContract {
     }
 
     /// Toggles the pause state of the contract (emergency circuit breaker).
-    ///
-    /// # Arguments
-    /// * `admin` - The admin address (must match stored admin)
-    /// * `status` - The pause status (true = paused, false = unpaused)
-    ///
-    /// # Panics
-    /// * If contract is not initialized
-    /// * If admin does not match stored admin
-    /// * If admin authentication fails
     pub fn set_pause(env: Env, admin: Address, status: bool) {
-        // 1. Fetch 'Admin' address from Instance storage
         let stored_admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
             .expect("Not initialized");
 
-        // 2. Assert admin == stored_admin
         if admin != stored_admin {
             panic!("Unauthorized");
         }
 
-        // 3. admin.require_auth()
         admin.require_auth();
-
-        // 4. Store pause status in Instance storage
         env.storage().instance().set(&DataKey::IsPaused, &status);
     }
 
     /// Allows an employer to lock USDC directly in the QuestEngine contract.
-    /// This acts as an isolated vault specifically for B2B bounties.
     pub fn create_build_quest(
         env: Env,
         employer: Address,
         reward_amount: i128,
         metadata_hash: BytesN<32>,
     ) -> u32 {
-        // 1. employer.require_auth()
         employer.require_auth();
 
-        // 2. Fetch token_client for the USDC asset.
         let token_address: Address = env
             .storage()
             .instance()
@@ -180,10 +142,8 @@ impl QuestEngineContract {
             .expect("Not initialized");
         let token_client = token::Client::new(&env, &token_address);
 
-        // 3. call token_client.transfer(employer, env.current_contract_address(), reward_amount).
         token_client.transfer(&employer, env.current_contract_address(), &reward_amount);
 
-        // 4. Increment Quest ID counter.
         let mut quest_id: u32 = env
             .storage()
             .instance()
@@ -194,25 +154,18 @@ impl QuestEngineContract {
             .instance()
             .set(&DataKey::QuestCounter, &quest_id);
 
-        // 5. Create Quest struct with QuestType::Build.
         let quest = Quest {
             employer: employer.clone(),
             reward_amount,
             quest_type: QuestType::Build,
             metadata_hash,
             active: true,
-            has_approved_submission: false,
-            total_funded: reward_amount,
-            consumed_amount: 0,
-            refunded_amount: 0,
         };
 
-        // 6. Save to Persistent storage.
         env.storage()
             .persistent()
             .set(&DataKey::Quest(quest_id), &quest);
 
-        // 7. Emit QuestCreated event.
         QuestCreated {
             employer,
             quest_id,
@@ -220,36 +173,18 @@ impl QuestEngineContract {
         }
         .publish(&env);
 
-        emit_budget_update(&env, quest_id, &quest);
-
         quest_id
     }
 
     /// Creates an Explore Quest that will be funded by the RewardPool.
-    /// Explore Quests are for off-chain actions verified by the admin.
-    ///
-    /// # Arguments
-    /// * `admin` - The admin address (must match stored admin)
-    /// * `reward_amount` - The amount to be paid from RewardPool upon verification
-    /// * `metadata_hash` - Hash of the quest metadata (description, requirements, etc.)
-    ///
-    /// # Returns
-    /// The ID of the newly created quest
-    ///
-    /// # Panics
-    /// * If admin authentication fails
-    /// * If admin does not match stored admin
-    /// * If contract is not initialized
     pub fn create_explore_quest(
         env: Env,
         admin: Address,
         reward_amount: i128,
         metadata_hash: BytesN<32>,
     ) -> u32 {
-        // 1. admin.require_auth()
         admin.require_auth();
 
-        // 2. Verify admin
         let stored_admin: Address = env
             .storage()
             .instance()
@@ -257,7 +192,6 @@ impl QuestEngineContract {
             .expect("Not initialized");
         assert!(admin == stored_admin, "Unauthorized");
 
-        // 3. Increment Quest ID counter
         let mut quest_id: u32 = env
             .storage()
             .instance()
@@ -268,27 +202,18 @@ impl QuestEngineContract {
             .instance()
             .set(&DataKey::QuestCounter, &quest_id);
 
-        // 4. Create Quest struct with QuestType::Explore
-        // Explore quests are funded by the RewardPool, so no on-chain escrow
-        // is tracked here (total_funded stays at 0).
         let quest = Quest {
             employer: admin.clone(),
             reward_amount,
             quest_type: QuestType::Explore,
             metadata_hash,
             active: true,
-            has_approved_submission: false,
-            total_funded: 0,
-            consumed_amount: 0,
-            refunded_amount: 0,
         };
 
-        // 5. Save to Persistent storage
         env.storage()
             .persistent()
             .set(&DataKey::Quest(quest_id), &quest);
 
-        // 6. Emit QuestCreated event
         QuestCreated {
             employer: admin,
             quest_id,
@@ -304,26 +229,10 @@ impl QuestEngineContract {
         env.storage().persistent().get(&DataKey::Quest(quest_id))
     }
 
-    /// Returns the escrow accounting snapshot for a quest: how much was
-    /// funded, how much has been consumed (paid out), how much has been
-    /// refunded, and how much remains available for future approvals or
-    /// refunds. Returns `None` when the quest does not exist.
-    pub fn get_quest_budget(env: Env, quest_id: u32) -> Option<QuestBudget> {
-        let quest: Quest = env.storage().persistent().get(&DataKey::Quest(quest_id))?;
-        Some(QuestBudget {
-            total_funded: quest.total_funded,
-            consumed_amount: quest.consumed_amount,
-            refunded_amount: quest.refunded_amount,
-            remaining: quest.remaining_budget(),
-        })
-    }
-
     /// Allows a learner to submit proof for a build quest.
     pub fn submit_proof(env: Env, learner: Address, quest_id: u32, proof_hash: BytesN<32>) {
-        // 1. learner.require_auth()
         learner.require_auth();
 
-        // 2. Retrieve Quest. Assert it is active and QuestType == Build.
         let quest: Quest = env
             .storage()
             .persistent()
@@ -336,22 +245,18 @@ impl QuestEngineContract {
             panic!("Only Build quests accept submissions");
         }
 
-        // 3. Construct DataKey::Submission(learner, quest_id).
         let submission_key = DataKey::Submission(learner.clone(), quest_id);
 
-        // 4. Assert a submission doesn't already exist.
         if env.storage().persistent().has(&submission_key) {
             panic!("Submission already exists");
         }
 
-        // 5. Save struct { proof_hash, status: SubmissionStatus::Pending } to storage.
         let submission = Submission {
             proof_hash: proof_hash.clone(),
             status: SubmissionStatus::Pending,
         };
         env.storage().persistent().set(&submission_key, &submission);
 
-        // 6. Emit ProofSubmitted event.
         ProofSubmitted {
             learner,
             quest_id,
@@ -375,7 +280,6 @@ impl QuestEngineContract {
         quest_id: u32,
         approve: bool,
     ) {
-        // 0. Check if contract is paused
         let is_paused: bool = env
             .storage()
             .instance()
@@ -383,11 +287,9 @@ impl QuestEngineContract {
             .unwrap_or(false);
         assert!(!is_paused, "Contract is paused");
 
-        // 1. employer.require_auth()
         employer.require_auth();
 
-        // 2. Retrieve Quest. Assert quest.employer == employer.
-        let mut quest: Quest = env
+        let quest: Quest = env
             .storage()
             .persistent()
             .get(&DataKey::Quest(quest_id))
@@ -396,7 +298,6 @@ impl QuestEngineContract {
             panic!("Only the quest employer can review submissions");
         }
 
-        // 3. Retrieve Submission. Assert status == Pending.
         let submission_key = DataKey::Submission(learner.clone(), quest_id);
         let mut submission: Submission = env
             .storage()
@@ -407,26 +308,24 @@ impl QuestEngineContract {
             panic!("Submission is not pending review");
         }
 
-        // 4. If approve == true:
-        if approve {
-            // a. Fetch token_client.transfer(env.current_contract_address(), learner, quest.reward_amount).
-            let token_address: Address = env
-                .storage()
-                .instance()
-                .get(&DataKey::Token)
-                .expect("Not initialized");
-            let token_client = token::Client::new(&env, &token_address);
+        let token_address: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("Not initialized");
+        let token_client = token::Client::new(&env, &token_address);
 
+        let reward_pool: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::RewardPool)
+            .expect("Not initialized");
+
+        if approve {
             let fee = (quest.reward_amount * 15) / 100;
             let base_learner_amount = quest.reward_amount - fee;
 
-            // Enforce quest-specific budget: escrow must cover fee + base_learner_amount.
-            let remaining = quest.remaining_budget();
-            if remaining < quest.reward_amount {
-                panic!("Insufficient quest budget");
-            }
-
-            // Fetch the learner's staking multiplier (basis-point math: 100 = 1.0×, 120 = 1.2×).
+            // Fetch stake vault and get multiplier
             let stake_vault_address: Address = env
                 .storage()
                 .instance()
@@ -435,55 +334,49 @@ impl QuestEngineContract {
             let stake_vault_client = StakeVaultClient::new(&env, &stake_vault_address);
             let multiplier = stake_vault_client.get_multiplier(&learner);
 
-            // Compute the real boosted payout.
-            let boosted_amount = (base_learner_amount * multiplier as i128) / 100;
+            // Calculate amount based on multiplier (basis points)
+            let final_learner_amount = (base_learner_amount * multiplier as i128) / 100;
 
-            // The boost delta above the base payout is drawn from the RewardPool —
-            // the explicit separate funding source. If the RewardPool lacks sufficient
-            // balance the token transfer fails deterministically.
-            let boost_delta = boosted_amount - base_learner_amount;
-
-            let reward_pool: Address = env
-                .storage()
-                .instance()
-                .get(&DataKey::RewardPool)
-                .expect("Not initialized");
-
-            // Transfer fee and base payout from quest escrow.
+            // Transfer fee to reward pool
             token_client.transfer(&env.current_contract_address(), &reward_pool, &fee);
-            token_client.transfer(
-                &env.current_contract_address(),
-                &learner,
-                &base_learner_amount,
-            );
 
-            // If the multiplier produces a boost, draw the delta from the RewardPool.
-            if boost_delta > 0 {
-                let reward_pool_client = RewardPoolClient::new(&env, &reward_pool);
-                reward_pool_client.distribute_reward(
+            if multiplier >= 100 {
+                // For multipliers >= 100, pay base from escrow
+                token_client.transfer(
                     &env.current_contract_address(),
                     &learner,
-                    &boost_delta,
+                    &base_learner_amount,
                 );
+
+                // If boosted > base, get the difference from reward pool
+                if final_learner_amount > base_learner_amount {
+                    let boost_delta = final_learner_amount - base_learner_amount;
+                    let reward_pool_client = RewardPoolClient::new(&env, &reward_pool);
+                    reward_pool_client.distribute_reward(
+                        &env.current_contract_address(),
+                        &learner,
+                        &boost_delta,
+                    );
+                }
+            } else {
+                // For multipliers < 100 (penalty), pay reduced amount from escrow
+                // Penalty goes to reward pool
+                let penalty = base_learner_amount - final_learner_amount;
+                token_client.transfer(
+                    &env.current_contract_address(),
+                    &learner,
+                    &final_learner_amount,
+                );
+                token_client.transfer(&env.current_contract_address(), &reward_pool, &penalty);
             }
 
             submission.status = SubmissionStatus::Approved;
-            quest.has_approved_submission = true;
-            // consumed_amount tracks what was drawn from the quest escrow.
-            quest.consumed_amount += quest.reward_amount;
         } else {
-            // 5. If approve == false:
-            // a. Update submission status to Rejected.
             submission.status = SubmissionStatus::Rejected;
         }
 
-        // 6. Save updated submission to Persistent storage.
         env.storage().persistent().set(&submission_key, &submission);
-        env.storage()
-            .persistent()
-            .set(&DataKey::Quest(quest_id), &quest);
 
-        // 7. Emit SubmissionReviewed event.
         SubmissionReviewed {
             employer,
             learner,
@@ -491,10 +384,6 @@ impl QuestEngineContract {
             approved: approve,
         }
         .publish(&env);
-
-        if approve {
-            emit_budget_update(&env, quest_id, &quest);
-        }
     }
 
     pub fn refund_quest(env: Env, employer: Address, quest_id: u32) {
@@ -513,47 +402,44 @@ impl QuestEngineContract {
             panic!("Quest already inactive");
         }
 
-        // Only the actual unspent escrow balance is returned. Any funds
-        // already paid out to learners (via approvals/batch approvals) are
-        // considered consumed and are not part of the refund.
-        let remaining = quest.remaining_budget();
-        if remaining <= 0 {
-            panic!("No unspent balance to refund");
-        }
-
-        quest.active = false;
-        quest.refunded_amount += remaining;
-        env.storage()
-            .persistent()
-            .set(&DataKey::Quest(quest_id), &quest);
-
         let token_address: Address = env
             .storage()
             .instance()
             .get(&DataKey::Token)
             .expect("Not initialized");
         let token_client = token::Client::new(&env, &token_address);
-        token_client.transfer(&env.current_contract_address(), &employer, &remaining);
+
+        // Check if there's any balance to refund
+        let contract_balance = token_client.balance(&env.current_contract_address());
+        if contract_balance == 0 {
+            panic!("No unspent balance to refund");
+        }
+
+        // Only refund the actual remaining balance
+        let refund_amount = contract_balance;
+
+        quest.active = false;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Quest(quest_id), &quest);
+
+        token_client.transfer(&env.current_contract_address(), &employer, &refund_amount);
 
         QuestRefunded {
             employer,
             quest_id,
-            amount: remaining,
+            amount: refund_amount,
         }
         .publish(&env);
-
-        emit_budget_update(&env, quest_id, &quest);
     }
 
     /// Approves multiple learner submissions in a single transaction.
-    /// Executes the full fee-adjusted payout for each learner.
     pub fn batch_review_submissions(
         env: Env,
         employer: Address,
         quest_id: u32,
         learners: Vec<Address>,
     ) {
-        // 0. Check if contract is paused
         let is_paused: bool = env
             .storage()
             .instance()
@@ -585,6 +471,17 @@ impl QuestEngineContract {
             .get(&DataKey::RewardPool)
             .expect("Not initialized");
 
+        let fee = (quest.reward_amount * 15) / 100;
+        let learner_amount = quest.reward_amount - fee;
+        let total_payout = learner_amount * (learners.len() as i128);
+        let total_fee = fee * (learners.len() as i128);
+
+        // Check if contract has enough balance
+        let contract_balance = token_client.balance(&env.current_contract_address());
+        if contract_balance < total_payout + total_fee {
+            panic!("Insufficient quest budget");
+        }
+
         let mut approved_count: u32 = 0;
         for learner in learners.iter() {
             let submission_key = DataKey::Submission(learner.clone(), quest_id);
@@ -598,24 +495,11 @@ impl QuestEngineContract {
                 panic!("Submission is not pending review");
             }
 
-            let fee = (quest.reward_amount * 15) / 100;
-            let learner_amount = quest.reward_amount - fee;
-
-            // Enforce quest-specific budget for every learner in the batch so
-            // the total payout across the batch cannot exceed the escrowed
-            // amount for this quest.
-            let remaining = quest.remaining_budget();
-            if remaining < fee + learner_amount {
-                panic!("Insufficient quest budget");
-            }
-
             token_client.transfer(&env.current_contract_address(), &reward_pool, &fee);
             token_client.transfer(&env.current_contract_address(), &learner, &learner_amount);
 
             submission.status = SubmissionStatus::Approved;
             env.storage().persistent().set(&submission_key, &submission);
-
-            quest.consumed_amount += fee + learner_amount;
 
             SubmissionReviewed {
                 employer: employer.clone(),
@@ -628,13 +512,11 @@ impl QuestEngineContract {
             approved_count += 1;
         }
 
-        if approved_count > 0 {
-            quest.has_approved_submission = true;
-            env.storage()
-                .persistent()
-                .set(&DataKey::Quest(quest_id), &quest);
-            emit_budget_update(&env, quest_id, &quest);
-        }
+        // Mark quest inactive after all approvals
+        quest.active = false;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Quest(quest_id), &quest);
 
         BatchReviewed {
             employer,
@@ -666,19 +548,6 @@ impl QuestEngineContract {
     }
 
     /// Verifies an Explore Quest completion and triggers payout from RewardPool.
-    /// Only the admin can call this function to reward off-chain actions.
-    ///
-    /// # Arguments
-    /// * `admin` - The admin address (must match stored admin)
-    /// * `learner` - The learner address to receive the reward
-    /// * `quest_id` - The ID of the Explore Quest to verify
-    ///
-    /// # Panics
-    /// * If admin authentication fails
-    /// * If admin does not match stored admin
-    /// * If quest is not found
-    /// * If quest type is not Explore
-    /// * If contract is not initialized
     pub fn verify_explore_quest(env: Env, admin: Address, learner: Address, quest_id: u32) {
         admin.require_auth();
 
@@ -699,6 +568,15 @@ impl QuestEngineContract {
             quest.quest_type == QuestType::Explore,
             "Not an Explore quest"
         );
+
+        // Check if learner already verified this quest
+        let verified_key = DataKey::Verified(learner.clone(), quest_id);
+        if env.storage().persistent().has(&verified_key) {
+            panic!("Learner already verified for this quest");
+        }
+
+        // Mark learner as verified
+        env.storage().persistent().set(&verified_key, &true);
 
         let reward_pool_address: Address = env
             .storage()
