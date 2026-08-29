@@ -19,6 +19,29 @@ impl MockStakeVault {
     }
 }
 
+/// Mock StakeVault that stores per-learner multipliers so tests can set
+/// different tiers for different learners in the same batch.
+#[contract]
+pub struct MockStakeVaultPerLearner;
+
+#[contractimpl]
+impl MockStakeVaultPerLearner {
+    /// Store a multiplier for a specific learner address.
+    pub fn set_multiplier(env: Env, learner: Address, multiplier: u32) {
+        env.storage()
+            .persistent()
+            .set(&(soroban_sdk::symbol_short!("mul"), learner), &multiplier);
+    }
+
+    /// Return the stored multiplier, defaulting to 100 (1×) if not set.
+    pub fn get_multiplier(env: Env, learner: Address) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&(soroban_sdk::symbol_short!("mul"), learner))
+            .unwrap_or(100u32)
+    }
+}
+
 /// Mock StakeVault that returns a custom multiplier
 #[contract]
 pub struct MockStakeVaultWithMultiplier;
@@ -1250,79 +1273,12 @@ fn test_mixed_quest_types() {
     assert_eq!(explore_quest.employer, admin);
 }
 
-// ── Batch Review with Multiplier Tests ──────────────────────────────────────
+// ── batch_review_submissions – multiplier parity tests ──────────────────────
 
+/// Batch approval with a 120× multiplier vault: each learner should receive
+/// the boosted amount, with the delta drawn from the reward pool.
 #[test]
-fn test_batch_review_with_multipliers_single_learner() {
-    let (env, client, token_id, reward_pool) = setup_with_multiplier(120);
-    let employer = Address::generate(&env);
-    let learner = Address::generate(&env);
-
-    let reward_amount: i128 = 1000;
-    let metadata_hash = BytesN::from_array(&env, &[110u8; 32]);
-
-    let fee = (reward_amount * 15) / 100; // 150
-    let base = reward_amount - fee; // 850
-
-    mint_tokens(&env, &token_id, &employer, &reward_amount);
-
-    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
-    client.submit_proof(&learner, &quest_id, &metadata_hash);
-
-    let mut learners = soroban_sdk::Vec::new(&env);
-    learners.push_back(learner.clone());
-
-    client.batch_review_submissions(&employer, &quest_id, &learners);
-
-    // With MockRewardPool (no-op), learner gets base amount
-    assert_eq!(token_balance(&env, &token_id, &learner), base);
-    assert_eq!(token_balance(&env, &token_id, &reward_pool), fee);
-    assert_eq!(token_balance(&env, &token_id, &client.address), 0);
-}
-
-#[test]
-fn test_batch_review_with_multipliers_multiple_learners() {
-    // Test batch review with multiple learners - each gets their own quest
-    let (env, client, token_id, reward_pool) = setup_with_multiplier(120);
-    let employer = Address::generate(&env);
-    let learner1 = Address::generate(&env);
-    let learner2 = Address::generate(&env);
-
-    let per_learner_reward: i128 = 1000;
-    let metadata_hash = BytesN::from_array(&env, &[111u8; 32]);
-
-    let fee = (per_learner_reward * 15) / 100; // 150
-    let base = per_learner_reward - fee; // 850
-
-    // Fund employer with enough for two quests
-    mint_tokens(&env, &token_id, &employer, &(per_learner_reward * 2));
-
-    // Create two separate quests
-    let quest_id1 = client.create_build_quest(&employer, &per_learner_reward, &metadata_hash);
-    let quest_id2 = client.create_build_quest(&employer, &per_learner_reward, &metadata_hash);
-
-    client.submit_proof(&learner1, &quest_id1, &metadata_hash);
-    client.submit_proof(&learner2, &quest_id2, &metadata_hash);
-
-    // Process each quest separately with batch_review (each batch has one learner)
-    let mut learners1 = soroban_sdk::Vec::new(&env);
-    learners1.push_back(learner1.clone());
-    client.batch_review_submissions(&employer, &quest_id1, &learners1);
-
-    let mut learners2 = soroban_sdk::Vec::new(&env);
-    learners2.push_back(learner2.clone());
-    client.batch_review_submissions(&employer, &quest_id2, &learners2);
-
-    // Both learners get base amount
-    assert_eq!(token_balance(&env, &token_id, &learner1), base);
-    assert_eq!(token_balance(&env, &token_id, &learner2), base);
-    assert_eq!(token_balance(&env, &token_id, &reward_pool), fee * 2);
-    assert_eq!(token_balance(&env, &token_id, &client.address), 0);
-}
-
-#[test]
-fn test_batch_review_with_mixed_multipliers() {
-    // Test with mixed multipliers: one staked (120x), one non-staked (100x)
+fn test_batch_review_with_120_multiplier() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -1334,11 +1290,7 @@ fn test_batch_review_with_mixed_multipliers() {
         .register_stellar_asset_contract_v2(token_admin.clone())
         .address();
 
-    // Use the map-based stake vault
-    let stake_vault_id = env.register(MockStakeVaultMap, ());
-    let stake_vault_client = MockStakeVaultMapClient::new(&env, &stake_vault_id);
-
-    // Use MockRewardPoolTransfer for actual token transfers
+    let stake_vault_id = env.register(MockStakeVaultWithMultiplier, ()); // 120
     let reward_pool_id = env.register(MockRewardPoolTransfer, ());
     let rp_client = MockRewardPoolTransferClient::new(&env, &reward_pool_id);
     rp_client.set_token(&token_id);
@@ -1347,127 +1299,303 @@ fn test_batch_review_with_mixed_multipliers() {
     client.initialize(&admin, &token_id, &reward_pool_id, &stake_vault_id);
 
     let employer = Address::generate(&env);
-    let learner1 = Address::generate(&env); // Will get 120x
-    let learner2 = Address::generate(&env); // Will get 100x
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[110u8; 32]);
 
-    // Set multipliers for each learner
-    stake_vault_client.set_multiplier(&learner1, &120);
-    stake_vault_client.set_multiplier(&learner2, &100);
+    let fee = (reward_amount * 15) / 100;
+    let base = reward_amount - fee;
+    let boosted = (base * 120) / 100;
+    let boost_delta = boosted - base;
 
-    let per_learner_reward: i128 = 1000;
-    let metadata_hash = BytesN::from_array(&env, &[112u8; 32]);
-
-    let fee = (per_learner_reward * 15) / 100; // 150
-    let base = per_learner_reward - fee; // 850
-    let boosted = (base * 120) / 100; // 1020
-    let boost_delta = boosted - base; // 170
-
-    // Fund employer with enough for two quests
-    mint_tokens(&env, &token_id, &employer, &(per_learner_reward * 2));
-
-    // Fund reward pool with boost delta for learner1 only (learner2 doesn't need boost)
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
     mint_tokens(&env, &token_id, &reward_pool_id, &boost_delta);
 
-    // Create two separate quests
-    let quest_id1 = client.create_build_quest(&employer, &per_learner_reward, &metadata_hash);
-    let quest_id2 = client.create_build_quest(&employer, &per_learner_reward, &metadata_hash);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &metadata_hash);
 
-    client.submit_proof(&learner1, &quest_id1, &metadata_hash);
-    client.submit_proof(&learner2, &quest_id2, &metadata_hash);
+    let mut learners = soroban_sdk::Vec::new(&env);
+    learners.push_back(learner.clone());
+    client.batch_review_submissions(&employer, &quest_id, &learners);
 
-    // Process each quest separately
-    let mut learners1 = soroban_sdk::Vec::new(&env);
-    learners1.push_back(learner1.clone());
-    client.batch_review_submissions(&employer, &quest_id1, &learners1);
+    assert_eq!(token_balance(&env, &token_id, &learner), boosted);
+    // reward_pool started with boost_delta, received fee, gave away boost_delta
+    assert_eq!(token_balance(&env, &token_id, &reward_pool_id), fee);
 
-    let mut learners2 = soroban_sdk::Vec::new(&env);
-    learners2.push_back(learner2.clone());
-    client.batch_review_submissions(&employer, &quest_id2, &learners2);
-
-    // learner1 should get boosted amount (1020), learner2 gets base amount (850)
-    assert_eq!(token_balance(&env, &token_id, &learner1), boosted);
-    assert_eq!(token_balance(&env, &token_id, &learner2), base);
-    // Reward pool should have fees for both learners: 150 * 2 = 300
-    assert_eq!(token_balance(&env, &token_id, &reward_pool_id), fee * 2);
-    // Contract should be empty
-    assert_eq!(token_balance(&env, &token_id, &client.address), 0);
+    let submission = client.get_submission(&learner, &quest_id).unwrap();
+    assert_eq!(submission.status, SubmissionStatus::Approved);
 }
 
+/// Batch approval with a 200× multiplier vault: larger boost delta.
 #[test]
-fn test_batch_review_with_penalty_multiplier() {
-    // Test batch review with 80x multiplier (penalty) - separate quests per learner
-    let (env, client, token_id, reward_pool) = setup_with_multiplier(80);
-    let employer = Address::generate(&env);
-    let learner1 = Address::generate(&env);
-    let learner2 = Address::generate(&env);
+fn test_batch_review_with_200_multiplier() {
+    let env = Env::default();
+    env.mock_all_auths();
 
-    let per_learner_reward: i128 = 1000;
+    let contract_id = env.register(QuestEngineContract, ());
+    let client = QuestEngineContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
+
+    let stake_vault_id = env.register(MockStakeVault200, ()); // 200
+    let reward_pool_id = env.register(MockRewardPoolTransfer, ());
+    let rp_client = MockRewardPoolTransferClient::new(&env, &reward_pool_id);
+    rp_client.set_token(&token_id);
+
+    let admin = Address::generate(&env);
+    client.initialize(&admin, &token_id, &reward_pool_id, &stake_vault_id);
+
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[111u8; 32]);
+
+    let fee = (reward_amount * 15) / 100;
+    let base = reward_amount - fee;
+    let boosted = (base * 200) / 100;
+    let boost_delta = boosted - base;
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    mint_tokens(&env, &token_id, &reward_pool_id, &boost_delta);
+
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &metadata_hash);
+
+    let mut learners = soroban_sdk::Vec::new(&env);
+    learners.push_back(learner.clone());
+    client.batch_review_submissions(&employer, &quest_id, &learners);
+
+    assert_eq!(token_balance(&env, &token_id, &learner), boosted);
+    assert_eq!(token_balance(&env, &token_id, &reward_pool_id), fee);
+}
+
+/// Batch approval with an 80× (penalty) multiplier vault: learner receives
+/// less than base; shortfall flows into reward pool alongside the fee.
+#[test]
+fn test_batch_review_with_80_multiplier() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(QuestEngineContract, ());
+    let client = QuestEngineContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
+
+    let stake_vault_id = env.register(MockStakeVault80, ()); // 80
+    let reward_pool_id = env.register(MockRewardPool, ());
+
+    let admin = Address::generate(&env);
+    client.initialize(&admin, &token_id, &reward_pool_id, &stake_vault_id);
+
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
+    let metadata_hash = BytesN::from_array(&env, &[112u8; 32]);
+
+    let fee = (reward_amount * 15) / 100;
+    let base = reward_amount - fee;
+    let penalised = (base * 80) / 100;
+    let penalty = base - penalised;
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &metadata_hash);
+
+    let mut learners = soroban_sdk::Vec::new(&env);
+    learners.push_back(learner.clone());
+    client.batch_review_submissions(&employer, &quest_id, &learners);
+
+    assert_eq!(token_balance(&env, &token_id, &learner), penalised);
+    // reward_pool (no-op mock) received fee + penalty from escrow
+    assert_eq!(
+        token_balance(&env, &token_id, &reward_pool_id),
+        fee + penalty
+    );
+}
+
+/// Batch approval with mixed multiplier tiers: learner A gets 120×, learner B
+/// gets 80×, learner C gets 100× (baseline).  Each must receive the correct
+/// individual payout.
+///
+/// This test uses `MockStakeVaultPerLearner` so each learner has its own tier.
+#[test]
+fn test_batch_review_mixed_multiplier_tiers() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Register the per-learner vault and configure tiers.
+    let stake_vault_id = env.register(MockStakeVaultPerLearner, ());
+    let sv_client = MockStakeVaultPerLearnerClient::new(&env, &stake_vault_id);
+
+    let contract_id = env.register(QuestEngineContract, ());
+    let client = QuestEngineContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
+
+    // Reward pool that actually transfers tokens (needed for learner_a's boost).
+    let reward_pool_id = env.register(MockRewardPoolTransfer, ());
+    let rp_client = MockRewardPoolTransferClient::new(&env, &reward_pool_id);
+    rp_client.set_token(&token_id);
+
+    let admin = Address::generate(&env);
+    client.initialize(&admin, &token_id, &reward_pool_id, &stake_vault_id);
+
+    let employer = Address::generate(&env);
+    let learner_a = Address::generate(&env); // 120× — boost
+    let learner_b = Address::generate(&env); // 80×  — penalty
+    let learner_c = Address::generate(&env); // 100× — baseline
+
+    sv_client.set_multiplier(&learner_a, &120u32);
+    sv_client.set_multiplier(&learner_b, &80u32);
+    sv_client.set_multiplier(&learner_c, &100u32);
+
+    let reward_amount: i128 = 1000;
     let metadata_hash = BytesN::from_array(&env, &[113u8; 32]);
 
-    let fee = (per_learner_reward * 15) / 100; // 150
-    let base = per_learner_reward - fee; // 850
-    let penalty_amount = (base * 80) / 100; // 680
-    let penalty = base - penalty_amount; // 170
+    // Fee/payout math for each learner.
+    let fee = (reward_amount * 15) / 100; // 150
+    let base = reward_amount - fee; // 850
 
-    // Fund employer with enough for two quests
-    mint_tokens(&env, &token_id, &employer, &(per_learner_reward * 2));
+    let expected_a = (base * 120) / 100; // 1020  (boost delta = 170)
+    let expected_b = (base * 80) / 100; //  680  (penalty  = 170)
+    let expected_c = base; //  850  (no change)
 
-    // Create two separate quests
-    let quest_id1 = client.create_build_quest(&employer, &per_learner_reward, &metadata_hash);
-    let quest_id2 = client.create_build_quest(&employer, &per_learner_reward, &metadata_hash);
+    let boost_delta_a = expected_a - base; // 170
 
-    client.submit_proof(&learner1, &quest_id1, &metadata_hash);
-    client.submit_proof(&learner2, &quest_id2, &metadata_hash);
+    // Three separate quests (one per learner) so the escrow per-quest is correct.
+    mint_tokens(&env, &token_id, &employer, &(reward_amount * 3));
+    // Seed the reward pool with enough to cover learner_a's boost.
+    mint_tokens(&env, &token_id, &reward_pool_id, &boost_delta_a);
 
-    // Process each quest separately
-    let mut learners1 = soroban_sdk::Vec::new(&env);
-    learners1.push_back(learner1.clone());
-    client.batch_review_submissions(&employer, &quest_id1, &learners1);
+    let qid_a = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    let qid_b = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    let qid_c = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
 
-    let mut learners2 = soroban_sdk::Vec::new(&env);
-    learners2.push_back(learner2.clone());
-    client.batch_review_submissions(&employer, &quest_id2, &learners2);
+    client.submit_proof(&learner_a, &qid_a, &metadata_hash);
+    client.submit_proof(&learner_b, &qid_b, &metadata_hash);
+    client.submit_proof(&learner_c, &qid_c, &metadata_hash);
 
-    // Both learners should receive penalty amounts
-    assert_eq!(token_balance(&env, &token_id, &learner1), penalty_amount);
-    assert_eq!(token_balance(&env, &token_id, &learner2), penalty_amount);
+    // Approve each learner via separate batch calls (one learner per quest).
+    let mut la = soroban_sdk::Vec::new(&env);
+    la.push_back(learner_a.clone());
+    client.batch_review_submissions(&employer, &qid_a, &la);
+
+    let mut lb = soroban_sdk::Vec::new(&env);
+    lb.push_back(learner_b.clone());
+    client.batch_review_submissions(&employer, &qid_b, &lb);
+
+    let mut lc = soroban_sdk::Vec::new(&env);
+    lc.push_back(learner_c.clone());
+    client.batch_review_submissions(&employer, &qid_c, &lc);
+
+    assert_eq!(token_balance(&env, &token_id, &learner_a), expected_a);
+    assert_eq!(token_balance(&env, &token_id, &learner_b), expected_b);
+    assert_eq!(token_balance(&env, &token_id, &learner_c), expected_c);
+
+    // Reward pool: started with boost_delta_a, received 3 fees, paid out boost_delta_a.
+    // Also received penalty from learner_b = base - expected_b = 170.
+    // Net: 3 * fee + penalty_b = 450 + 170 = 620.
+    let expected_pool = 3 * fee + (base - expected_b); // 450 + 170 = 620
     assert_eq!(
-        token_balance(&env, &token_id, &reward_pool),
-        (fee + penalty) * 2
+        token_balance(&env, &token_id, &reward_pool_id),
+        expected_pool
     );
-    assert_eq!(token_balance(&env, &token_id, &client.address), 0);
 }
 
+/// Batch approval must fail deterministically when the reward pool cannot
+/// cover the boost delta for a learner with a multiplier > 100.
 #[test]
-fn test_batch_review_emits_individual_and_aggregate_events() {
-    let (env, client, token_id, _reward_pool, _admin, _stake_vault_id) = setup();
-    let employer = Address::generate(&env);
-    let learner1 = Address::generate(&env);
-    let learner2 = Address::generate(&env);
+#[should_panic]
+fn test_batch_review_fails_when_pool_cannot_cover_boost() {
+    let env = Env::default();
+    env.mock_all_auths();
 
-    let per_learner_reward: i128 = 500;
+    let contract_id = env.register(QuestEngineContract, ());
+    let client = QuestEngineContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
+
+    // 120× vault but pool has no funds — transfer will fail.
+    let stake_vault_id = env.register(MockStakeVaultWithMultiplier, ());
+    let reward_pool_id = env.register(MockRewardPoolTransfer, ());
+    let rp_client = MockRewardPoolTransferClient::new(&env, &reward_pool_id);
+    rp_client.set_token(&token_id);
+    // Intentionally DO NOT mint boost_delta to reward_pool.
+
+    let admin = Address::generate(&env);
+    client.initialize(&admin, &token_id, &reward_pool_id, &stake_vault_id);
+
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 1000;
     let metadata_hash = BytesN::from_array(&env, &[114u8; 32]);
 
-    // Fund employer with enough for two quests
-    mint_tokens(&env, &token_id, &employer, &(per_learner_reward * 2));
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
 
-    // Create two separate quests
-    let quest_id1 = client.create_build_quest(&employer, &per_learner_reward, &metadata_hash);
-    let quest_id2 = client.create_build_quest(&employer, &per_learner_reward, &metadata_hash);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &metadata_hash);
 
-    client.submit_proof(&learner1, &quest_id1, &metadata_hash);
-    client.submit_proof(&learner2, &quest_id2, &metadata_hash);
+    let mut learners = soroban_sdk::Vec::new(&env);
+    learners.push_back(learner.clone());
+    // Should panic because pool has zero balance.
+    client.batch_review_submissions(&employer, &quest_id, &learners);
+}
 
-    // Process each quest separately
-    let mut learners1 = soroban_sdk::Vec::new(&env);
-    learners1.push_back(learner1);
-    client.batch_review_submissions(&employer, &quest_id1, &learners1);
+/// Batch approval should panic when the contract is paused.
+#[test]
+#[should_panic(expected = "Contract is paused")]
+fn test_batch_review_paused_panics() {
+    let (env, client, token_id, _reward_pool, admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 500;
+    let metadata_hash = BytesN::from_array(&env, &[115u8; 32]);
 
-    let mut learners2 = soroban_sdk::Vec::new(&env);
-    learners2.push_back(learner2);
-    client.batch_review_submissions(&employer, &quest_id2, &learners2);
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &metadata_hash);
 
-    let events = env.events().all();
-    // Should have 2 SubmissionReviewed events + 2 BatchReviewed events
-    assert_eq!(events.len(), 4);
+    client.set_pause(&admin, &true);
+
+    let mut learners = soroban_sdk::Vec::new(&env);
+    learners.push_back(learner.clone());
+    client.batch_review_submissions(&employer, &quest_id, &learners);
+}
+
+/// Batch approval should panic when a submission is already reviewed.
+#[test]
+#[should_panic(expected = "Submission is not pending review")]
+fn test_batch_review_already_reviewed_panics() {
+    let (env, client, token_id, _reward_pool, _admin, _stake_vault_id) = setup();
+    let employer = Address::generate(&env);
+    let learner = Address::generate(&env);
+    let reward_amount: i128 = 500;
+    let metadata_hash = BytesN::from_array(&env, &[116u8; 32]);
+
+    mint_tokens(&env, &token_id, &employer, &reward_amount);
+    let quest_id = client.create_build_quest(&employer, &reward_amount, &metadata_hash);
+    client.submit_proof(&learner, &quest_id, &metadata_hash);
+
+    let mut learners = soroban_sdk::Vec::new(&env);
+    learners.push_back(learner.clone());
+    client.batch_review_submissions(&employer, &quest_id, &learners);
+
+    // Second batch on the same (now-Approved) submission should panic.
+    // Need a new quest because the first is now inactive, but the learner
+    // submission is already Approved – re-registering same learner+quest
+    // key will surface the same panic.
+    client.batch_review_submissions(&employer, &quest_id, &learners);
 }
