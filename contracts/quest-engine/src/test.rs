@@ -5,7 +5,7 @@ use soroban_sdk::{
 };
 
 use crate::types::{QuestType, SubmissionStatus};
-use crate::{QuestEngineContract, QuestEngineContractClient};
+use crate::{DataKey, QuestEngineContract, QuestEngineContractClient};
 
 // ── Mock StakeVault Contract ─────────────────────────────────────────────────
 
@@ -112,6 +112,27 @@ impl MockRewardPoolTransfer {
     }
 }
 
+/// Mock StakeVault that returns a specific multiplier for each learner via a map
+#[contract]
+pub struct MockStakeVaultMap;
+
+#[contractimpl]
+impl MockStakeVaultMap {
+    // We'll use storage to store multiplier mappings
+    pub fn set_multiplier(env: Env, learner: Address, multiplier: u32) {
+        env.storage()
+            .instance()
+            .set(&DataKey::Multiplier(learner), &multiplier);
+    }
+
+    pub fn get_multiplier(env: Env, learner: Address) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::Multiplier(learner))
+            .unwrap_or(100)
+    }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn setup() -> (
@@ -175,7 +196,8 @@ fn setup_with_multiplier(
     (env, client, token_id, reward_pool_id)
 }
 
-fn setup_with_boosted_multiplier() -> (Env, QuestEngineContractClient<'static>, Address, Address) {
+// Add this helper function
+fn setup_with_boosted_reward_pool() -> (Env, QuestEngineContractClient<'static>, Address, Address) {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -189,6 +211,7 @@ fn setup_with_boosted_multiplier() -> (Env, QuestEngineContractClient<'static>, 
 
     let stake_vault_id = env.register(MockStakeVaultWithMultiplier, ());
 
+    // Use MockRewardPoolTransfer for actual token transfers
     let reward_pool_id = env.register(MockRewardPoolTransfer, ());
     let rp_client = MockRewardPoolTransferClient::new(&env, &reward_pool_id);
     rp_client.set_token(&token_id);
@@ -699,7 +722,7 @@ fn test_review_submission_with_no_multiplier() {
 
 #[test]
 fn test_review_submission_with_120_multiplier() {
-    let (env, client, token_id, reward_pool_id) = setup_with_boosted_multiplier();
+    let (env, client, token_id, reward_pool_id) = setup_with_boosted_reward_pool();
     let employer = Address::generate(&env);
     let learner = Address::generate(&env);
     let reward_amount: i128 = 1000;
@@ -765,7 +788,11 @@ fn test_staked_learner_receives_more_than_non_staked() {
     let non_staked_payout = token_balance(&env1, &token_id1, &learner_no_stake);
 
     // Staked learner (120x)
-    let (env2, client2, token_id2, rp2) = setup_with_boosted_multiplier();
+    // Change this line:
+    // let (env2, client2, token_id2, rp2) = setup_with_boosted_multiplier();
+    // To:
+    let (env2, client2, token_id2, rp2) = setup_with_boosted_reward_pool();
+
     let employer2 = Address::generate(&env2);
     let learner_staked = Address::generate(&env2);
     let mh2 = BytesN::from_array(&env2, &[82u8; 32]);
@@ -847,7 +874,11 @@ fn test_review_submission_with_200_multiplier_draws_delta_from_pool() {
 #[test]
 #[should_panic]
 fn test_review_submission_fails_deterministically_when_pool_cannot_cover_boost() {
-    let (env, client, token_id, _reward_pool_id) = setup_with_boosted_multiplier();
+    // Change this line:
+    // let (env, client, token_id, _reward_pool_id) = setup_with_boosted_multiplier();
+    // To:
+    let (env, client, token_id, _reward_pool_id) = setup_with_boosted_reward_pool();
+
     let employer = Address::generate(&env);
     let learner = Address::generate(&env);
     let reward_amount: i128 = 1000;
