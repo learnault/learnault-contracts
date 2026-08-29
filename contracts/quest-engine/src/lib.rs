@@ -443,7 +443,7 @@ impl QuestEngineContract {
         }
 
         let submission_key = DataKey::Submission(learner.clone(), quest_id);
-        let submission: Submission = env
+        let mut submission: Submission = env
             .storage()
             .persistent()
             .get(&submission_key)
@@ -564,7 +564,8 @@ impl QuestEngineContract {
 
         employer.require_auth();
 
-        let quest: Quest = env
+        // ✅ Make quest mutable
+        let mut quest: Quest = env
             .storage()
             .persistent()
             .get(&DataKey::Quest(quest_id))
@@ -595,7 +596,8 @@ impl QuestEngineContract {
         let mut approved_count: u32 = 0;
         for learner in learners.iter() {
             let submission_key = DataKey::Submission(learner.clone(), quest_id);
-            let submission: Submission = env
+            // ✅ Make submission mutable
+            let mut submission: Submission = env
                 .storage()
                 .persistent()
                 .get(&submission_key)
@@ -605,7 +607,6 @@ impl QuestEngineContract {
                 panic!("Submission is not pending review");
             }
 
-            // Reuse the same approval logic as review_submission.
             approve_submission_inner(
                 &env,
                 &token_client,
@@ -613,25 +614,25 @@ impl QuestEngineContract {
                 &stake_vault_address,
                 &quest,
                 &learner,
-                &mut submission,
+                &mut submission, // now OK because submission is mut
             );
 
             env.storage().persistent().set(&submission_key, &submission);
 
+            // ✅ Correct event – no extra fields, closing brace, and publish
             SubmissionReviewed {
                 employer: employer.clone(),
-                learner,
+                learner: learner.clone(),
                 quest_id,
-                submission_key,
-                &token_client,
-                &reward_pool,
-            );
+                approved: true,
+            }
+            .publish(&env);
 
             approved_count += 1;
         }
 
         // Mark quest inactive after all approvals.
-        quest.active = false;
+        quest.active = false; // now OK because quest is mut
         env.storage()
             .persistent()
             .set(&DataKey::Quest(quest_id), &quest);
