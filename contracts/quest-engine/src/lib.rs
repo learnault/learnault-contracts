@@ -85,73 +85,6 @@ pub struct ExploreQuestVerified {
 #[contract]
 pub struct QuestEngineContract;
 
-// ── Internal helpers ──────────────────────────────────────────────────────────
-
-/// Core approval logic shared by `review_submission` and `batch_review_submissions`.
-///
-/// Applies the 15 % platform fee, queries the stake-vault multiplier, transfers
-/// the learner's share from the escrow (and optionally draws a boost delta from
-/// the reward pool), then marks the submission as `Approved`.
-///
-/// Callers are responsible for:
-/// - Auth / pause checks.
-/// - Verifying the submission is `Pending` before calling this function.
-/// - Persisting the mutated `Submission` back to storage after the call.
-fn approve_submission_inner(
-    env: &Env,
-    token_client: &token::Client,
-    reward_pool: &Address,
-    stake_vault_address: &Address,
-    quest: &Quest,
-    learner: &Address,
-    submission: &mut Submission,
-) {
-    let fee = (quest.reward_amount * 15) / 100;
-    let base_learner_amount = quest.reward_amount - fee;
-
-    // Query the learner's staking multiplier (basis points, 100 = 1×).
-    let stake_vault_client = StakeVaultClient::new(env, stake_vault_address);
-    let multiplier = stake_vault_client.get_multiplier(learner);
-
-    // Boosted / penalised amount.
-    let final_learner_amount = (base_learner_amount * multiplier as i128) / 100;
-
-    // 15 % fee always goes to the reward pool.
-    token_client.transfer(&env.current_contract_address(), reward_pool, &fee);
-
-    if multiplier >= 100 {
-        // Pay the base amount from escrow …
-        token_client.transfer(
-            &env.current_contract_address(),
-            learner,
-            &base_learner_amount,
-        );
-
-        // … and draw any boost delta from the reward pool.
-        if final_learner_amount > base_learner_amount {
-            let boost_delta = final_learner_amount - base_learner_amount;
-            let reward_pool_client = RewardPoolClient::new(env, reward_pool);
-            reward_pool_client.distribute_reward(
-                &env.current_contract_address(),
-                learner,
-                &boost_delta,
-            );
-        }
-    } else {
-        // Penalty path: learner receives a reduced amount; the shortfall is
-        // sent to the reward pool on top of the regular fee.
-        let penalty = base_learner_amount - final_learner_amount;
-        token_client.transfer(
-            &env.current_contract_address(),
-            learner,
-            &final_learner_amount,
-        );
-        token_client.transfer(&env.current_contract_address(), reward_pool, &penalty);
-    }
-
-    submission.status = SubmissionStatus::Approved;
-}
-
 // ── Contract implementation ───────────────────────────────────────────────────
 
 #[contractimpl]
@@ -443,7 +376,7 @@ impl QuestEngineContract {
         }
 
         let submission_key = DataKey::Submission(learner.clone(), quest_id);
-        let mut submission: Submission = env
+        let submission: Submission = env
             .storage()
             .persistent()
             .get(&submission_key)
@@ -466,20 +399,14 @@ impl QuestEngineContract {
                 .get(&DataKey::RewardPool)
                 .expect("Not initialized");
 
-            let stake_vault_address: Address = env
-                .storage()
-                .instance()
-                .get(&DataKey::StakeVault)
-                .expect("Not initialized");
-
-            approve_submission_inner(
+            Self::process_submission_approval(
                 &env,
+                &quest,
+                learner.clone(),
+                quest_id,
+                submission_key,
                 &token_client,
                 &reward_pool,
-                &stake_vault_address,
-                &quest,
-                &learner,
-                &mut submission,
             );
         } else {
             let mut submission: Submission = env
@@ -500,6 +427,7 @@ impl QuestEngineContract {
         }
     }
 
+    /// Refunds the employer for an inactive quest.
     pub fn refund_quest(env: Env, employer: Address, quest_id: u32) {
         employer.require_auth();
 
@@ -564,7 +492,6 @@ impl QuestEngineContract {
 
         employer.require_auth();
 
-        // ✅ Make quest mutable
         let mut quest: Quest = env
             .storage()
             .persistent()
@@ -587,17 +514,10 @@ impl QuestEngineContract {
             .get(&DataKey::RewardPool)
             .expect("Not initialized");
 
-        let stake_vault_address: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::StakeVault)
-            .expect("Not initialized");
-
         let mut approved_count: u32 = 0;
         for learner in learners.iter() {
             let submission_key = DataKey::Submission(learner.clone(), quest_id);
-            // ✅ Make submission mutable
-            let mut submission: Submission = env
+            let submission: Submission = env
                 .storage()
                 .persistent()
                 .get(&submission_key)
@@ -607,32 +527,21 @@ impl QuestEngineContract {
                 panic!("Submission is not pending review");
             }
 
-            approve_submission_inner(
+            Self::process_submission_approval(
                 &env,
+                &quest,
+                learner.clone(),
+                quest_id,
+                submission_key,
                 &token_client,
                 &reward_pool,
-                &stake_vault_address,
-                &quest,
-                &learner,
-                &mut submission, // now OK because submission is mut
             );
-
-            env.storage().persistent().set(&submission_key, &submission);
-
-            // ✅ Correct event – no extra fields, closing brace, and publish
-            SubmissionReviewed {
-                employer: employer.clone(),
-                learner: learner.clone(),
-                quest_id,
-                approved: true,
-            }
-            .publish(&env);
 
             approved_count += 1;
         }
 
         // Mark quest inactive after all approvals.
-        quest.active = false; // now OK because quest is mut
+        quest.active = false;
         env.storage()
             .persistent()
             .set(&DataKey::Quest(quest_id), &quest);
