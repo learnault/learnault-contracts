@@ -19,4 +19,5 @@ Icon?
 *.DS_Store
 
 # IDE settings
-.vscode/
+config.bat
+node_modules
